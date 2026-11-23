@@ -126,7 +126,7 @@ export interface MenuBarProps {
   deformMode?: string
   /** Whether the Model info pane is visible. */
   showModelInfo?: boolean
-  /** Whether the Materials pane is visible. */
+  /** Whether the Filaments pane is visible. */
   showMaterials?: boolean
   /** Whether the Components pane is visible. */
   showComponents?: boolean
@@ -156,7 +156,7 @@ export interface MenuBarProps {
   showLibrary?: boolean
   /** Toggle the Model info pane. */
   onToggleModelInfo?: () => void
-  /** Toggle the Materials pane. */
+  /** Toggle the Filaments pane. */
   onToggleMaterials?: () => void
   /** Toggle the Components pane. */
   onToggleComponents?: () => void
@@ -1420,7 +1420,7 @@ export function MenuBar({
               onClick={withClose(() => onToggleObjectInfo?.())}
             />
             <CheckMenuItem
-              label={t`Materials`}
+              label={t`Filaments`}
               shortcut={sc('toggle-materials')}
               checked={showMaterials}
               onClick={withClose(() => onToggleMaterials?.())}

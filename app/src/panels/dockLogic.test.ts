@@ -76,11 +76,12 @@ describe('dockVerbsFor', () => {
   // Library effort: Save to Library rides along, ungated, when no `gates`
   // arg is passed at all (see dockVerbsFor's early return) — the gates
   // test below covers the hidden-when-unavailable case.
-  // True Curves organization: Fillet (second) and Shell join the row, and
-  // Position Texture leaves it (Paint is the way to it) to cap the row at eight.
-  it('object: primary Push/Pull, then Fillet, Move, Paint, Shell, Make Component, Save to Library, Erase', () => {
+  // True Curves organization: Fillet (second) and Shell join the row. An
+  // Object is made of one filament, so there is no Paint or Position Texture.
+  it('object: primary Push/Pull, then Fillet, Move, Shell, Make Component, Save to Library, Erase', () => {
     const verbs = dockVerbsFor('object')
-    expect(verbs.map((v) => v.id)).toEqual(offered(['tool-pushpull', 'tool-fillet', 'tool-move', 'tool-paint', 'tool-shell', 'edit-make-component', 'save-to-library', 'edit-delete']))
+    expect(verbs.map((v) => v.id)).toEqual(offered(['tool-pushpull', 'tool-fillet', 'tool-move', 'tool-shell', 'edit-make-component', 'save-to-library', 'edit-delete']))
+    expect(verbs.map((v) => v.id)).not.toContain('tool-paint')
     expect(verbs.map((v) => v.id)).not.toContain('tool-position-texture')
   })
 
@@ -120,7 +121,7 @@ describe('dockVerbsFor', () => {
     // Object inside an editing context (canMakeComponent is top-level-only).
     expect(
       dockVerbsFor('object', { canGroup: false, canMakeComponent: false }).map((v) => v.id),
-    ).toEqual(offered(['tool-pushpull', 'tool-fillet', 'tool-move', 'tool-paint', 'tool-shell', 'edit-delete']))
+    ).toEqual(offered(['tool-pushpull', 'tool-fillet', 'tool-move', 'tool-shell', 'edit-delete']))
     expect(
       dockVerbsFor('group', { canGroup: false, canMakeComponent: false }).map((v) => v.id),
     ).toEqual(['enter-context', 'tool-move', 'tool-scale', 'ungroup', 'edit-delete'])

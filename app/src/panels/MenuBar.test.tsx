@@ -501,11 +501,11 @@ describe('MenuBar', () => {
     expect(onToggleModelInfo).toHaveBeenCalledOnce()
   })
 
-  it('calls onToggleMaterials when View > Materials is mousedown-clicked', () => {
+  it('calls onToggleMaterials when View > Filaments is mousedown-clicked', () => {
     const onToggleMaterials = vi.fn()
     render(<MenuBar {...defaultProps} showMaterials={false} onToggleMaterials={onToggleMaterials} />)
     fireEvent.click(screen.getByRole('button', { name: /^view$/i }))
-    fireEvent.mouseDown(screen.getByText('Materials'))
+    fireEvent.mouseDown(screen.getByText('Filaments'))
     expect(onToggleMaterials).toHaveBeenCalledOnce()
   })
 
@@ -1002,7 +1002,7 @@ describe('MenuBar', () => {
     // wall withholds (a submenu with nothing left goes too), then any
     // separator that is doubled or at an edge.
     const full = [
-      'Select', 'Eraser', 'Paint', 'Position Texture', '',
+      'Select', 'Eraser', '',
       'Move', 'Rotate', 'Scale', 'Flip', '',
       'Push/Pull', 'Follow Me', 'Offset', 'Fillet', 'Chamfer', '',
       'Shape', 'Deform', '',

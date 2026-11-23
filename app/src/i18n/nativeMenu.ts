@@ -153,8 +153,6 @@ export const NATIVE_MENU_LABELS: Record<string, MessageDescriptor> = {
 
   // Tools
   'tool-select': msg`Select`,
-  'tool-paint': msg({ context: 'tool', message: 'Paint' }),
-  'tool-position-texture': msg`Position Texture`,
   'tool-move': msg`Move`,
   'tool-rotate': msg`Rotate`,
   'tool-scale': msg({ context: 'tool', message: 'Scale' }),
@@ -205,7 +203,7 @@ export const NATIVE_MENU_LABELS: Record<string, MessageDescriptor> = {
   // Window
   'win-model-info': msg`Model Info`,
   'win-object-info': msg`Object Info`,
-  'win-materials': msg`Materials`,
+  'win-materials': msg`Filaments`,
   'win-components': msg`Components`,
   'win-tags': msg`Tags`,
   'win-scenes': msg`Scenes Panel`,

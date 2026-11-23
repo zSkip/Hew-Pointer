@@ -32,8 +32,8 @@ msgid "· red"
 msgstr ""
 
 #: src/App.tsx
-msgid "\"{matDeleteName}\" — used on {matDeleteUsage, plural, one {# face} other {# faces}} — delete and unpaint them?"
-msgstr ""
+#~ msgid "\"{matDeleteName}\" — used on {matDeleteUsage, plural, one {# face} other {# faces}} — delete and unpaint them?"
+#~ msgstr ""
 
 #: src/library/libraryUpdates.ts
 msgid "“{name}” is locked and was not updated. Unlock it first."
@@ -1121,12 +1121,12 @@ msgid "↑ ↓ navigate · ↵ run · esc close"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "+ Add color"
-msgstr ""
+#~ msgid "+ Add color"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "+ Add texture"
-msgstr ""
+#~ msgid "+ Add texture"
+#~ msgstr ""
 
 #: src/panels/library/LibraryDetailPane.tsx
 msgid "+ keyword"
@@ -1426,8 +1426,8 @@ msgid "Add a shortcut to {label}"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Add color"
-msgstr ""
+#~ msgid "Add color"
+#~ msgstr ""
 
 #: src/i18n/nativeMenu.ts
 #: src/palette/registry.ts
@@ -1453,8 +1453,8 @@ msgid "Add tag to all selected"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Add texture"
-msgstr ""
+#~ msgid "Add texture"
+#~ msgstr ""
 
 #: src/health/healthCopy.ts
 #: src/i18n/historyLabels.ts
@@ -1676,6 +1676,10 @@ msgstr ""
 msgid "Ask again…"
 msgstr ""
 
+#: src/borpa/filamentScene.ts
+msgid "Assign filament"
+msgstr ""
+
 #: src/settings/ViewPane.tsx
 msgid "At the cursor"
 msgstr ""
@@ -1886,6 +1890,10 @@ msgstr ""
 msgid "bug"
 msgstr ""
 
+#: src/panels/FilamentSidebar.tsx
+msgid "Build in {name}"
+msgstr ""
+
 #: src/panels/ImportingOverlay.tsx
 msgid "Building objects: {done} of {total}"
 msgstr ""
@@ -2083,25 +2091,29 @@ msgstr ""
 msgid "Checks that the Hew cloud relay is reachable from this computer."
 msgstr ""
 
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Choose a filament…"
+msgstr ""
+
 #: src/panels/SentReportsDialog.tsx
 msgid "Choose a file to attach"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Choose an image file first."
-msgstr ""
+#~ msgid "Choose an image file first."
+#~ msgstr ""
 
 #: src/health/healthCopy.ts
 msgid "Choose at least one step."
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Choose color"
-msgstr ""
+#~ msgid "Choose color"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Choose color…"
-msgstr ""
+#~ msgid "Choose color…"
+#~ msgstr ""
 
 #: src/health/healthCopy.ts
 msgid "Choose for each item"
@@ -2144,7 +2156,6 @@ msgstr ""
 
 #: src/panels/ComponentsPanel.tsx
 #: src/panels/DocumentTree.tsx
-#: src/panels/MaterialPalette.tsx
 #: src/panels/TagsPanel.tsx
 msgid "Clear filter"
 msgstr ""
@@ -3186,14 +3197,13 @@ msgstr ""
 msgid "Decimal inches (60.125\")"
 msgstr ""
 
-#: src/panels/MaterialPalette.tsx
 #: src/panels/ScenesPanel.tsx
 msgid "Default"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Default (unpainted)"
-msgstr ""
+#~ msgid "Default (unpainted)"
+#~ msgstr ""
 
 #: src/panels/ObjectInfoPanel.tsx
 msgid "Definition Name"
@@ -3333,16 +3343,16 @@ msgid "Delete material"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Delete material {name}"
-msgstr ""
+#~ msgid "Delete material {name}"
+#~ msgstr ""
 
 #: src/App.tsx
-msgid "Delete material failed: {reason}"
-msgstr ""
+#~ msgid "Delete material failed: {reason}"
+#~ msgstr ""
 
 #: src/App.tsx
-msgid "Delete material?"
-msgstr ""
+#~ msgid "Delete material?"
+#~ msgstr ""
 
 #: src/i18n/historyLabels.ts
 msgid "Delete object"
@@ -3385,8 +3395,8 @@ msgid "Deleted component \"{name}\"."
 msgstr ""
 
 #: src/App.tsx
-msgid "Deleted material \"{name}\"."
-msgstr ""
+#~ msgid "Deleted material \"{name}\"."
+#~ msgstr ""
 
 #: src/scenes/scenesModel.ts
 msgid "Deleting a Scene can't be undone."
@@ -4151,6 +4161,21 @@ msgstr ""
 msgid "Field of View"
 msgstr ""
 
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Filament"
+msgstr ""
+
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Filament for the selection"
+msgstr ""
+
+#: src/App.tsx
+#: src/i18n/nativeMenu.ts
+#: src/panels/FilamentSidebar.tsx
+#: src/panels/MenuBar.tsx
+msgid "Filaments"
+msgstr ""
+
 #: src/i18n/nativeMenu.ts
 #: src/panels/MenuBar.tsx
 msgid "File"
@@ -4210,12 +4235,12 @@ msgid "Filter fonts…"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Filter materials"
-msgstr ""
+#~ msgid "Filter materials"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Filter materials…"
-msgstr ""
+#~ msgid "Filter materials…"
+#~ msgstr ""
 
 #: src/panels/DocumentTree.tsx
 msgid "Filter outliner"
@@ -4686,8 +4711,8 @@ msgstr ""
 
 #. Abbreviation for height, label beside the texture height field
 #: src/panels/MaterialPalette.tsx
-msgid "H:"
-msgstr ""
+#~ msgid "H:"
+#~ msgstr ""
 
 #: src/panels/PhoneShareDialog.tsx
 msgid "Handoff URL"
@@ -5268,6 +5293,10 @@ msgstr ""
 msgid "In the browser, Hew talks to the server it was loaded from — there is nothing to configure here. The desktop app can be pointed at a self-hosted server under Settings ▸ Advanced."
 msgstr ""
 
+#: src/panels/FilamentSidebar.tsx
+msgid "In the selection"
+msgstr ""
+
 #: src/panels/library/LibraryDetailPane.tsx
 #: src/panels/LibraryDialog.tsx
 msgid "In this model"
@@ -5729,6 +5758,10 @@ msgstr ""
 msgid "Library material"
 msgstr ""
 
+#: src/App.tsx
+msgid "Library materials are not used here: an Object is made of the filament chosen in the Filaments pane."
+msgstr ""
+
 #: src/io/documentSession.ts
 msgid "Library metadata"
 msgstr ""
@@ -6107,11 +6140,7 @@ msgstr ""
 msgid "materials"
 msgstr ""
 
-#: src/App.tsx
-#: src/i18n/nativeMenu.ts
 #: src/panels/LibraryDialog.tsx
-#: src/panels/MenuBar.tsx
-#: src/panels/ObjectInfoPanel.tsx
 msgid "Materials"
 msgstr ""
 
@@ -6241,20 +6270,20 @@ msgid "Merging those points would fold faces onto each other. Turn on Separate p
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Metallic"
-msgstr ""
+#~ msgid "Metallic"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Metallic (select a material swatch first)"
-msgstr ""
+#~ msgid "Metallic (select a material swatch first)"
+#~ msgstr ""
 
 #: src/kernelErrors.ts
 msgid "Metallic and roughness must each be between 0 and 100%."
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Metallic for {selectedName}"
-msgstr ""
+#~ msgid "Metallic for {selectedName}"
+#~ msgstr ""
 
 #: src/settings/stlImportUnit.ts
 #: src/settings/units.ts
@@ -6543,8 +6572,8 @@ msgstr ""
 #~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Name…"
-msgstr ""
+#~ msgid "Name…"
+#~ msgstr ""
 
 #: src/palette/registry.ts
 msgid "named view"
@@ -6602,6 +6631,10 @@ msgstr ""
 
 #: src/panels/library/LibraryDetailPane.tsx
 msgid "New collection path"
+msgstr ""
+
+#: src/panels/FilamentSidebar.tsx
+msgid "New geometry is built in {name}"
 msgstr ""
 
 #: src/panels/library/LibraryDetailPane.tsx
@@ -6672,6 +6705,14 @@ msgstr ""
 msgid "No document."
 msgstr ""
 
+#: src/panels/FilamentSidebar.tsx
+msgid "No filament matches."
+msgstr ""
+
+#: src/panels/FilamentSidebar.tsx
+msgid "No filaments yet. Choose a printer in Borpa to list its filaments."
+msgstr ""
+
 #: src/log/reportBundle.ts
 msgid "no file failed to open"
 msgstr ""
@@ -6714,8 +6755,8 @@ msgid "No materials here yet."
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "No materials match"
-msgstr ""
+#~ msgid "No materials match"
+#~ msgstr ""
 
 #: src/panels/SentReportsDialog.tsx
 msgid "No messages yet."
@@ -7199,24 +7240,24 @@ msgid "Only this one"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity"
-msgstr ""
+#~ msgid "Opacity"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity — {selectedName}"
-msgstr ""
+#~ msgid "Opacity — {selectedName}"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity (select a material swatch first)"
-msgstr ""
+#~ msgid "Opacity (select a material swatch first)"
+#~ msgstr ""
 
 #: src/library/libraryModel.ts
 msgid "opacity {percent}%"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity for {selectedName}"
-msgstr ""
+#~ msgid "Opacity for {selectedName}"
+#~ msgstr ""
 
 #: src/panels/LibraryDialog.tsx
 #: src/panels/SentReportsDialog.tsx
@@ -7533,10 +7574,9 @@ msgid "Paint"
 msgstr ""
 
 #: src/i18n/nativeMenu.ts
-#: src/tools/toolRegistry.ts
-msgctxt "tool"
-msgid "Paint"
-msgstr ""
+#~ msgctxt "tool"
+#~ msgid "Paint"
+#~ msgstr ""
 
 #: src/i18n/historyLabels.ts
 msgid "Paint face"
@@ -7895,9 +7935,8 @@ msgid "Position texture"
 msgstr ""
 
 #: src/i18n/nativeMenu.ts
-#: src/tools/toolRegistry.ts
-msgid "Position Texture"
-msgstr ""
+#~ msgid "Position Texture"
+#~ msgstr ""
 
 #: src/tools/PositionTextureTool.ts
 msgid "Position Texture ended — the model changed since positioning started"
@@ -8472,8 +8511,8 @@ msgid "Rename material"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Rename material {name}"
-msgstr ""
+#~ msgid "Rename material {name}"
+#~ msgstr ""
 
 #: src/i18n/historyLabels.ts
 msgid "Rename tag"
@@ -8772,16 +8811,16 @@ msgid "Rotate the selection around an inferred axis."
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Roughness"
-msgstr ""
+#~ msgid "Roughness"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Roughness (select a material swatch first)"
-msgstr ""
+#~ msgid "Roughness (select a material swatch first)"
+#~ msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Roughness for {selectedName}"
-msgstr ""
+#~ msgid "Roughness for {selectedName}"
+#~ msgstr ""
 
 #: src/palette/registry.ts
 msgid "round"
@@ -8951,7 +8990,6 @@ msgid "Save to file…"
 msgstr ""
 
 #: src/panels/dockLogic.ts
-#: src/panels/MaterialPalette.tsx
 #: src/panels/SaveToLibraryPopover.tsx
 msgid "Save to Library"
 msgstr ""
@@ -8979,8 +9017,8 @@ msgid "Saved \"{name}\" to library"
 msgstr ""
 
 #: src/App.tsx
-msgid "Saved \"{name}\" to library."
-msgstr ""
+#~ msgid "Saved \"{name}\" to library."
+#~ msgstr ""
 
 #: src/library/libraryModel.ts
 msgid "Saved {date}"
@@ -9157,6 +9195,10 @@ msgstr ""
 msgid "Search every tool and action."
 msgstr ""
 
+#: src/panels/FilamentSidebar.tsx
+msgid "Search filaments"
+msgstr ""
+
 #: src/panels/LibraryDialog.tsx
 msgid "Search name or keyword…"
 msgstr ""
@@ -9244,8 +9286,8 @@ msgid "Select a drawn open line or arc first, then save it as a profile."
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "Select a material swatch to adjust its opacity"
-msgstr ""
+#~ msgid "Select a material swatch to adjust its opacity"
+#~ msgstr ""
 
 #: src/tools/PositionTextureTool.ts
 msgid "Select a textured face to position its texture"
@@ -9546,6 +9588,10 @@ msgstr ""
 msgid "Show in Explorer"
 msgstr ""
 
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Show in Filaments pane"
+msgstr ""
+
 #: src/panels/library/LibraryMenu.tsx
 msgid "Show in file manager"
 msgstr ""
@@ -9563,8 +9609,8 @@ msgid "Show in list"
 msgstr ""
 
 #: src/panels/ObjectInfoPanel.tsx
-msgid "Show in Materials pane"
-msgstr ""
+#~ msgid "Show in Materials pane"
+#~ msgstr ""
 
 #: src/panels/ObjectInfoPanel.tsx
 msgid "Show in Tags pane"
@@ -9603,6 +9649,10 @@ msgid "Show or hide the debug log panel."
 msgstr ""
 
 #: src/palette/registry.ts
+msgid "Show or hide the Filaments panel."
+msgstr ""
+
+#: src/palette/registry.ts
 msgid "Show or hide the floating action dock at the bottom of the viewport."
 msgstr ""
 
@@ -9611,8 +9661,8 @@ msgid "Show or hide the ground grid."
 msgstr ""
 
 #: src/palette/registry.ts
-msgid "Show or hide the Materials panel."
-msgstr ""
+#~ msgid "Show or hide the Materials panel."
+#~ msgstr ""
 
 #: src/palette/registry.ts
 msgid "Show or hide the Model Info panel."
@@ -9837,6 +9887,10 @@ msgstr ""
 
 #: src/palette/registry.ts
 msgid "Slide the camera parallel to the view plane."
+msgstr ""
+
+#: src/panels/FilamentSidebar.tsx
+msgid "Slot {slot}"
 msgstr ""
 
 #: src/settings/view.ts
@@ -10865,6 +10919,10 @@ msgstr ""
 msgid "The selection has nothing visible to transform — everything in it is hidden or empty. Unhide its contents, or select something visible."
 msgstr ""
 
+#: src/panels/FilamentSidebar.tsx
+msgid "The selection is made of this"
+msgstr ""
+
 #: src/panels/PhoneShareDialog.tsx
 msgid "The server rejected the upload key — check Settings ▸ Advanced."
 msgstr ""
@@ -11527,6 +11585,10 @@ msgid "Toggle Debug Log"
 msgstr ""
 
 #: src/palette/registry.ts
+msgid "Toggle Filaments"
+msgstr ""
+
+#: src/palette/registry.ts
 msgid "Toggle Grid"
 msgstr ""
 
@@ -11535,8 +11597,8 @@ msgid "Toggle Guides"
 msgstr ""
 
 #: src/palette/registry.ts
-msgid "Toggle Materials"
-msgstr ""
+#~ msgid "Toggle Materials"
+#~ msgstr ""
 
 #: src/palette/registry.ts
 msgid "Toggle Model Info"
@@ -12143,6 +12205,10 @@ msgstr ""
 msgid "Use"
 msgstr ""
 
+#: src/panels/FilamentSidebar.tsx
+msgid "Use {currentName} for selection"
+msgstr ""
+
 #: src/kernelErrorCopy/blend.ts
 msgid "Use between 2 and 96 segments."
 msgstr ""
@@ -12248,8 +12314,8 @@ msgstr ""
 
 #. Abbreviation for width, label beside the texture width field
 #: src/panels/MaterialPalette.tsx
-msgid "W:"
-msgstr ""
+#~ msgid "W:"
+#~ msgstr ""
 
 #: src/i18n/nativeMenu.ts
 msgid "Walk"
@@ -12389,8 +12455,8 @@ msgid "Working…"
 msgstr ""
 
 #: src/panels/MaterialPalette.tsx
-msgid "World size must be positive numbers."
-msgstr ""
+#~ msgid "World size must be positive numbers."
+#~ msgstr ""
 
 #: src/palette/curveEntries.ts
 msgid "wrap"

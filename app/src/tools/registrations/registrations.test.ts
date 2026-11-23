@@ -16,8 +16,6 @@ import { actionOffered } from '../../curveActions'
  */
 const NOT_REGISTERED: Record<string, string> = {
   Select: 'owned by ToolController (resetToSelect); the default tool',
-  Paint: 'material, eyedropper cursor, instance-paint refresh and session-stack hooks',
-  'Position Texture': 'live uv preview straight into the scene renderer',
   Move: 'shared with the select-drag handoff (beginDragMove), copy-mode cursor badge, guide targets',
   Rotate: 'copy-mode cursor badge, guide targets, transform-target acquirer',
   Scale: 'transform-target acquirer and release',

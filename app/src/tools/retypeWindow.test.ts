@@ -135,6 +135,28 @@ describe('RetypeWindow', () => {
 })
 
 describe('RetypeWindow — multi-step commits', () => {
+  it('armFrom with the depth before a bracketed commit counts it as ONE step', () => {
+    // An extrusion bracketed with its filament: the generation moves for
+    // each inner edit and for the compound, the depth by one.
+    let gen = 1n
+    let depth = 5
+    const scene = {
+      history_generation: vi.fn(() => gen),
+      undo_depth: vi.fn(() => depth),
+      scene_undo: vi.fn(() => { gen += 1n; depth -= 1; return { free: vi.fn() } }),
+      scene_redo: vi.fn(() => { gen += 1n; depth += 1; return { free: vi.fn() } }),
+    }
+    const w = new RetypeWindow<Spec>(scene)
+    const g0 = scene.history_generation()
+    const d0 = scene.undo_depth()
+    gen += 3n
+    depth += 1
+    w.armFrom({ size: 1 }, g0, d0)
+    expect(w.apply(() => { gen += 3n; depth += 1; return true }, () => true, () => ({ size: 2 }))).toBe('ok')
+    expect(scene.scene_undo).toHaveBeenCalledTimes(1)
+    expect(depth).toBe(6)
+  })
+
   it('armFrom measures the entries from the generation before the commit; apply undoes that many', () => {
     const scene = makeScene()
     const w = new RetypeWindow<Spec>(scene)

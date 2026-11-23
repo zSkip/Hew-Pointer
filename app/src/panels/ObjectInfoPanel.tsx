@@ -44,7 +44,7 @@
  *   - No async listeners or cleanup races introduced here.
  */
 
-import { useMemo, useState, useEffect, useRef, useCallback } from 'react'
+import { useMemo, useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react'
 import { i18n } from '@lingui/core'
 import { msg, plural, t as tCore } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -79,6 +79,7 @@ import { formatLength, formatLengthIn, formatAreaIn, formatVolumeIn } from '../s
 import { useLengthDisplay, type LengthDisplay } from '../settings/useLengthDisplay'
 import { measureSelection, type SelectionMeasure } from './measureInfo'
 import { selectionMaterials } from './selectionMaterials'
+import { getFilamentState, subscribeFilaments } from '../borpa/filaments'
 import { parseKernelErrorCode, kernelErrorMessage } from '../kernelErrors'
 import { frozenCause, isLockableKind, isLockRefusalCode, isLocked, sharedShapeCause } from '../lock/lockModel'
 import { setNodesLocked } from '../lock/lockActions'
@@ -140,10 +141,13 @@ interface Props {
    */
   onSelectTag?: (path: string[]) => void
   /**
-   * A Materials-row entry was clicked: select that material in the Materials
-   * pane (App reveals the pane and scrolls the swatch into view).
+   * A Filament-row entry was clicked: select that filament in the Filaments
+   * pane (App reveals the pane).
    */
   onSelectMaterial?: (id: bigint) => void
+  /** The Filament row's choice: make the selected Objects this filament
+   *  (a preset name from borpa/filaments.ts). Omitted hides the choice. */
+  onChooseFilament?: (name: string) => void
   /**
    * Surface a refusal. Segments is the panel's first control the kernel can
    * refuse, and a refusal has to be visible — never a field that silently
@@ -285,7 +289,7 @@ const ADD_TAG_BUTTON_STYLE: React.CSSProperties = {
   flexShrink: 0,
 }
 
-export function ObjectInfoPanel({ scene, docRev, selectedIds, onNameChanged, onGeometryChanged, onTagsChanged, onSelectMany, onSelectTag, onSelectMaterial, onToast, onShowHealth, selectedAnnotations = NO_IDS, selectedGuides = NO_IDS, sessionStack, sessionMembers = null, onLockChanged }: Props) {
+export function ObjectInfoPanel({ scene, docRev, selectedIds, onNameChanged, onGeometryChanged, onTagsChanged, onSelectMany, onSelectTag, onSelectMaterial, onChooseFilament, onToast, onShowHealth, selectedAnnotations = NO_IDS, selectedGuides = NO_IDS, sessionStack, sessionMembers = null, onLockChanged }: Props) {
   const { t } = useLingui()
   // Re-render the length readouts when the format OR the Precision changes.
   const lengthDisplay = useLengthDisplay()
@@ -1223,7 +1227,7 @@ export function ObjectInfoPanel({ scene, docRev, selectedIds, onNameChanged, onG
             )}
           </div>
         )}
-        {multi !== null && <MaterialsRow key={selectedKeyForReset} ids={materialIds} scene={scene} onSelect={onSelectMaterial} />}
+        {multi !== null && <MaterialsRow key={selectedKeyForReset} ids={materialIds} scene={scene} onSelect={onSelectMaterial} onChooseFilament={onChooseFilament} />}
       </div>
     )
   }
@@ -1630,21 +1634,21 @@ export function ObjectInfoPanel({ scene, docRev, selectedIds, onNameChanged, onG
       </div>
       )}
 
-      {/* Materials — everything painted on the selection, union over a
-       * group's or component's contents. Same eligibility as Tags. */}
+      {/* Filament — what the selection is made of, union over a group's
+       * or component's contents. Same eligibility as Tags. */}
       {(nodeInfo.kind === 'object' || nodeInfo.kind === 'group' || nodeInfo.kind === 'instance') && (
-        <MaterialsRow key={selectedKeyForReset} ids={materialIds} scene={scene} onSelect={onSelectMaterial} />
+        <MaterialsRow key={selectedKeyForReset} ids={materialIds} scene={scene} onSelect={onSelectMaterial} onChooseFilament={onChooseFilament} />
       )}
     </div>
   )
 }
 
 // ---------------------------------------------------------------------------
-// MaterialsRow — a swatch and a name per distinct material on the selection.
-// Clicking one selects it in the Materials pane. Read-only: there is no
-// remove affordance (unpainting is the Paint tool's job). Shows "None" when
-// nothing is painted; past MAX_MATERIAL_SWATCHES the rest fold into a
-// "+N more" button that expands the list.
+// MaterialsRow — the Filament row: a swatch and a name per distinct filament
+// (material) on the selection. Clicking one selects it in the Filaments pane;
+// the choice below it makes the whole selection one filament. Shows "None"
+// when nothing has a filament; past MAX_MATERIAL_SWATCHES the rest fold into
+// a "+N more" button that expands the list.
 // ---------------------------------------------------------------------------
 
 /** Swatches shown before the rest fold into "+N more". */
@@ -1654,18 +1658,22 @@ function MaterialsRow({
   ids,
   scene,
   onSelect,
+  onChooseFilament,
 }: {
   ids: bigint[]
   scene: WasmScene
   onSelect?: (id: bigint) => void
+  onChooseFilament?: (name: string) => void
 }) {
   const { t } = useLingui()
+  const { filaments } = useSyncExternalStore(subscribeFilaments, getFilamentState, getFilamentState)
   const [expanded, setExpanded] = useState(false)
+  const only = ids.length === 1 ? (scene.material_info(ids[0])?.name() ?? '') : ''
   const shown = expanded ? ids : ids.slice(0, MAX_MATERIAL_SWATCHES)
   const hidden = ids.length - shown.length
   return (
     <div data-testid="object-info-materials">
-      <div style={LABEL_STYLE}><Trans>Materials</Trans></div>
+      <div style={LABEL_STYLE}><Trans>Filament</Trans></div>
       {ids.length === 0 ? (
         <div style={{ ...VALUE_STYLE, color: 'var(--text-secondary, #ccc)' }}><Trans>None</Trans></div>
       ) : (
@@ -1679,7 +1687,7 @@ function MaterialsRow({
               <button
                 key={id.toString()}
                 data-testid="material-entry"
-                title={t`Show in Materials pane`}
+                title={t`Show in Filaments pane`}
                 onClick={() => onSelect?.(id)}
                 style={{
                   display: 'flex',
@@ -1727,6 +1735,24 @@ function MaterialsRow({
             </button>
           )}
         </div>
+      )}
+      {onChooseFilament !== undefined && filaments.length > 0 && (
+        <select
+          aria-label={t`Filament for the selection`}
+          data-testid="object-info-filament-choice"
+          value={filaments.some((f) => f.name === only) ? only : ''}
+          onChange={(e) => {
+            if (e.target.value !== '') onChooseFilament(e.target.value)
+          }}
+          style={{ marginTop: '4px', width: '100%', fontSize: '11px' }}
+        >
+          {!filaments.some((f) => f.name === only) && <option value="">{t`Choose a filament…`}</option>}
+          {filaments.map((f) => (
+            <option key={f.name} value={f.name}>
+              {f.name}
+            </option>
+          ))}
+        </select>
       )}
     </div>
   )

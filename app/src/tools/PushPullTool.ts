@@ -1210,12 +1210,14 @@ export class PushPullTool implements Tool {
   }
 
   /** Commit through `_commit`, then open the retype window on the result
-   *  (entry count measured from the history generation, so a through
-   *  push/pull that records a boolean's steps retracts them all). */
+   *  (entry count measured from the undo depth, so a through push/pull that
+   *  records a boolean's steps retracts them all, and an extrusion bracketed
+   *  with its filament (borpa/filamentScene.ts) retracts as one). */
   private _commitAndArm(target: PushPullTarget, distance: number, anchor: [number, number, number]): void {
     const genBefore = this.wasmScene.history_generation()
+    const depthBefore = typeof this.wasmScene.undo_depth === 'function' ? this.wasmScene.undo_depth() : null
     if (this._commit(target, distance)) {
-      this.retype.armFrom({ target, distance, extrudeAsNew: this.extrudeAsNewMode, anchor }, genBefore)
+      this.retype.armFrom({ target, distance, extrudeAsNew: this.extrudeAsNewMode, anchor }, genBefore, depthBefore)
     }
   }
 

@@ -80,7 +80,6 @@ export const ALL_TOOL_SPECS: readonly ToolSpec[] = [
   // ---- Inspect ----
   { name: 'Tape Measure', label: msg`Tape Measure`, group: 'Inspect', actionId: 'tool-tape-measure' },
   { name: 'Dimension', label: msg({ context: 'tool', message: 'Dimension' }), group: 'Inspect', actionId: 'tool-dimension' },
-  { name: 'Paint', label: msg({ context: 'tool', message: 'Paint' }), group: 'Inspect', actionId: 'tool-paint' },
   { name: 'Section Plane', label: msg`Section Plane`, group: 'Inspect', actionId: 'tool-section-plane' },
   // ---- Menu/palette-only (no rail slot; see ToolSpec.group doc above) ----
   { name: 'Protractor', label: msg`Protractor`, actionId: 'tool-protractor' },
@@ -90,9 +89,6 @@ export const ALL_TOOL_SPECS: readonly ToolSpec[] = [
   // Text: leader-text annotations (docs/design/dimensions-text.md) — menu/
   // palette-only, like Protractor/Slice/Edit Vertex above.
   { name: 'Text', label: msg({ context: 'tool', message: 'Text' }), actionId: 'tool-text' },
-  // Position Texture: reached via the contextual dock on a textured face
-  // (paint-tool design §3), not the rail.
-  { name: 'Position Texture', label: msg`Position Texture`, actionId: 'tool-position-texture' },
   // ---- Camera ----
   { name: 'Orbit', label: msg`Orbit`, actionId: 'tool-orbit' },
   { name: 'Pan', label: msg({ context: 'tool', message: 'Pan' }), actionId: 'tool-pan' },

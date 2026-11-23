@@ -26,7 +26,8 @@ import { MeasurementBox } from './viewport/MeasurementBox'
 import { ViewDie } from './viewport/ViewDie'
 import { GeoReferenceInfo } from './panels/GeoReferenceInfo'
 import { DocumentTree, type LinkedCopyActions } from './panels/DocumentTree'
-import { MaterialPalette } from './panels/MaterialPalette'
+import { FilamentSidebar } from './panels/FilamentSidebar'
+import { selectionMaterials } from './panels/selectionMaterials'
 import { MenuBar } from './panels/MenuBar'
 import { CAMERA_HANDOFF_TOOL_NAMES } from './panels/cameraHandoffTools'
 import { TitleBar } from './TitleBar'
@@ -174,6 +175,9 @@ import { TextDialog, type TextDialogResult } from './panels/TextDialog'
 import { layoutGlyphRun } from './text/glyphRun'
 import { collectNonSolidObjects } from './io/solidGating'
 import { installBorpaBridge, isBorpa } from './borpa/host'
+import { assignFilament, filamentForLink, readFilamentLinks } from './borpa/buildMaterial'
+import { ASSIGN_FILAMENT_LABEL, flattenDocument, withBuildFilament } from './borpa/filamentScene'
+import { getFilamentState, selectFilament, subscribeFilaments, type Filament } from './borpa/filaments'
 import { friendlyErrorText, isErrorLevelCode, kernelErrorMessage, parseKernelErrorCode } from './kernelErrors'
 import { CommandPalette } from './palette/CommandPalette'
 import { toolHint, toolActionId, type PaletteEntry } from './palette/registry'
@@ -366,8 +370,6 @@ export const TOOL_MENU_IDS: Record<string, string> = {
   Shell: 'tool-shell',
   Project: 'tool-project',
   Eraser: 'tool-eraser',
-  Paint: 'tool-paint',
-  'Position Texture': 'tool-position-texture',
   Move: 'tool-move',
   Rotate: 'tool-rotate',
   Scale: 'tool-scale',
@@ -618,7 +620,7 @@ export default function App() {
   const trayTitle = {
     objectInfo: t`Object Info`,
     outliner: t`Outliner`,
-    materials: t`Materials`,
+    materials: t`Filaments`,
     components: t`Components`,
     tags: t`Tags`,
     scenes: t`Scenes`,
@@ -816,14 +818,6 @@ export default function App() {
   docGenerationRef.current = docGeneration
   /** Currently selected material id for the Paint tool. */
   const [currentMaterialId, setCurrentMaterialId] = useState<bigint>(MATERIAL_SENTINEL)
-  // Picking a material makes it current AND activates the Paint tool, so the
-  // next click paints with it (Ctrl/Cmd-click fills the whole object). This is
-  // the whole-object path that the removed "Fill selected object" button used
-  // to serve — the status bar spells out the Ctrl/Cmd-click shortcut.
-  const handleSelectMaterial = (id: bigint) => {
-    setCurrentMaterialId(id)
-    setActiveTool('Paint')
-  }
   /** Document session: currentRef + dirty flag. */
   const [docSession, setDocSession] = useState<DocSessionState>(INITIAL_SESSION)
   // File ▸ Revert to Saved has a file to return to and changes to throw away.
@@ -1043,14 +1037,6 @@ export default function App() {
   pendingRescaleConfirmRef.current = pendingRescaleConfirm
   /** File ▸ Revert to Saved is waiting for its one confirmation. */
   const [revertPromptOpen, setRevertPromptOpen] = useState(false)
-  /** A material delete pending confirmation (used on >0 faces/objects) —
-   *  null once confirmed/cancelled, or when a delete of an UNUSED material
-   *  never needed a modal at all (v1.1 assets lane). */
-  const [pendingMaterialDelete, setPendingMaterialDelete] = useState<{
-    id: bigint
-    name: string
-    usage: number
-  } | null>(null)
   /** A component-definition delete pending confirmation (used by >0
    *  instances). */
   const [pendingComponentDelete, setPendingComponentDelete] = useState<{
@@ -1320,7 +1306,8 @@ export default function App() {
     loadKernel()
       .then((kernel) => {
         const kernelVersion = kernel.version()
-        const scene = kernel.newScene()
+        // New geometry is built in the selected filament (borpa/filamentScene.ts).
+        const scene = withBuildFilament(kernel.newScene())
         sceneRef.current = scene
         // Snapshot blank scene bytes for "New" resets.
         blankBytesRef.current = new Uint8Array(scene.save())
@@ -3238,9 +3225,6 @@ export default function App() {
   /** Active Tags-panel reveal (palette jump); cleared after a short flash. */
   const [revealTag, setRevealTag] = useState<TagReveal | null>(null)
   const revealNonceRef = useRef(0)
-  /** Bumped on each Object Info → Materials reveal so the palette scrolls the
-   *  swatch into view even when it was already the current material. */
-  const [materialRevealNonce, setMaterialRevealNonce] = useState(0)
 
   /** The one "select and reveal" for Object Info's links: bring the tray back,
    *  open the pane, select the target in it, and have the pane expand and
@@ -3260,11 +3244,52 @@ export default function App() {
         setRevealTag((cur) => (cur?.nonce === nonce ? null : cur))
       }, 2000)
     } else if (pane === 'materials' && typeof target === 'bigint') {
+      // A material is a filament: select that filament in the Filaments pane.
       setShowMaterials(true)
-      setCurrentMaterialId(target)
-      setMaterialRevealNonce((n) => n + 1)
+      const scene = sceneRef.current
+      let link: ReturnType<ReturnType<typeof readFilamentLinks>['get']>
+      try {
+        link = scene === null ? undefined : readFilamentLinks(scene).get(target)
+      } catch (err: unknown) {
+        LogStore.log.error('app', `Could not read the filament of a material: ${String(err)}`)
+      }
+      const filament = link === undefined ? null : filamentForLink(link, getFilamentState().filaments)
+      if (filament !== null) selectFilament(filament.name)
     }
   }, [showTray])
+
+  /** The Objects the selection is made of (members of groups and
+   *  components included), and the filaments they are made of. */
+  const selectedObjects = useMemo(
+    () => (state === null ? [] : selectionObjectIds(state.scene, selectedIds)),
+    // docRev: membership changes without the selection changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [state, selectedIds, docRev],
+  )
+  const selectionFilamentNames = useMemo(() => {
+    if (state === null) return []
+    const nodes = selectedIds.filter((n) => n.kind === 'object' || n.kind === 'group' || n.kind === 'instance')
+    return selectionMaterials(state.scene, nodes).flatMap((m) => state.scene.material_info(m)?.name() ?? [])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, selectedIds, docRev])
+
+  /** The Filaments pane's "Use for selection" and Object Info's filament
+   *  choice: the selected Objects become that filament, in one undo step. */
+  const handleUseFilamentForSelection = useCallback((filament: Filament) => {
+    const scene = sceneRef.current
+    if (scene === null) return
+    try {
+      const result = assignFilament(scene, filament, selectedObjects, 'all', activeI18n._(ASSIGN_FILAMENT_LABEL))
+      if (result.assigned.length > 0) refreshAfterPanelMutation()
+    } catch (err: unknown) {
+      handleToast(friendlyErrorText(err))
+    }
+  }, [selectedObjects, refreshAfterPanelMutation, handleToast, activeI18n])
+  const filamentState = useSyncExternalStore(subscribeFilaments, getFilamentState, getFilamentState)
+  const handleChooseFilament = useCallback((name: string) => {
+    const filament = filamentState.filaments.find((f) => f.name === name)
+    if (filament !== undefined) handleUseFilamentForSelection(filament)
+  }, [filamentState, handleUseFilamentForSelection])
 
   // ---------------------------------------------------------------- document lifecycle events
   // Tells the Scene a lifecycle step for its next event drain
@@ -3369,6 +3394,13 @@ export default function App() {
       )
     }
     documentLoadedRef.current = true
+    // One filament per Object: a document from before filaments takes the
+    // selected one, its per-face paint cleared (one undo step).
+    try {
+      flattenDocument(scene)
+    } catch (err: unknown) {
+      LogStore.log.error('app', `Could not give the document's Objects a filament: ${String(err)}`)
+    }
     if (file !== undefined) clearOpenAttempt()
     else forgetSettledFailure()
     // `Scene.load` cleared the `.skp` source, and this is a new document:
@@ -5767,46 +5799,6 @@ export default function App() {
     })
   }
 
-  /** MaterialPalette's "Save to Library" button — no thumbnail render (a
-   * pure-material item has nothing to render; `renderItemThumbnail` would
-   * honestly return null), so this just writes and shows a plain toast. */
-  const handleSaveMaterialToLibrary = useCallback(
-    (materialId: bigint) => {
-      const scene = sceneRef.current
-      if (scene === null) return
-      const info = scene.material_info(materialId)
-      const name = info?.name() ?? 'Material'
-      const id = crypto.randomUUID()
-      const meta = {
-        id,
-        name,
-        category: 'material',
-        savedAt: new Date().toISOString(),
-        sourceDoc: documentName(docSessionRef.current),
-      }
-      let bytes: Uint8Array
-      try {
-        bytes = scene.extract_material_item(materialId, JSON.stringify(meta))
-      } catch (err) {
-        const code = parseKernelErrorCode(err)
-        const rawMsg = err instanceof Error ? err.message : String(err)
-        handleToast(kernelErrorMessage(code ?? 'Unknown', rawMsg), code ?? undefined)
-        return
-      }
-      const fileName = itemFileName(name, id, 'material')
-      void (async () => {
-        try {
-          await libraryStore().write(fileName, bytes)
-        } catch (err) {
-          handleToast(t`Save to Library failed: ${ph({ reason: err instanceof Error ? err.message : String(err) })}`)
-          return
-        }
-        handleToast(t`Saved "${name}" to library.`)
-      })()
-    },
-    [handleToast],
-  )
-
   const onLibraryInsert = useCallback(
     (item: LibraryItem, bytes: Uint8Array) => {
       setShowLibrary(false)
@@ -5893,60 +5885,14 @@ export default function App() {
     [applyLoadedBytes, handleToast],
   )
 
-  const onLibraryPaintWith = useCallback(
-    (_item: LibraryItem, bytes: Uint8Array) => {
-      const scene = sceneRef.current
-      if (scene === null) return
-      let ids: BigUint64Array
-      try {
-        ids = scene.insert_item_palette(bytes)
-      } catch (err) {
-        const code = parseKernelErrorCode(err)
-        const rawMsg = err instanceof Error ? err.message : String(err)
-        handleToast(kernelErrorMessage(code ?? 'Unknown', rawMsg), code ?? undefined)
-        return
-      }
-      // Palette entries serialize into the document — mark it dirty like
-      // any other committed mutation (adversarial review S10), or a
-      // close/quit after "Paint with this" silently drops the material.
-      // The material-registry write itself pushes no undo entry
-      // (conformance's `material_and_tag_registry_writes_add_no_undo_entry`),
-      // so `handleDocumentChanged`'s `at_saved_mark()` read alone can't see
-      // it — an explicit non-undoable reason, same as Scenes.
-      handleDocumentChanged()
-      setDocSession((s) => markNonUndoableDirty(s, NON_UNDOABLE_REASON.libraryMaterials, Date.now()))
-      setDocRev((r) => r + 1)
-      if (ids.length === 0) return
-      setCurrentMaterialId(ids[0])
-      setActiveTool('Paint')
-      setShowLibrary(false)
-    },
-    [handleToast, handleDocumentChanged],
-  )
-
-  const onLibraryAddToPalette = useCallback(
-    (item: LibraryItem, bytes: Uint8Array) => {
-      const scene = sceneRef.current
-      if (scene === null) return
-      let ids: BigUint64Array
-      try {
-        ids = scene.insert_item_palette(bytes)
-      } catch (err) {
-        const code = parseKernelErrorCode(err)
-        const rawMsg = err instanceof Error ? err.message : String(err)
-        handleToast(kernelErrorMessage(code ?? 'Unknown', rawMsg), code ?? undefined)
-        return
-      }
-      // Dirty for the same reason as Paint-with-this (adversarial review
-      // S10): the palette rides the document, and the same non-undoable
-      // registry write applies.
-      handleDocumentChanged()
-      setDocSession((s) => markNonUndoableDirty(s, NON_UNDOABLE_REASON.libraryMaterials, Date.now()))
-      setDocRev((r) => r + 1)
-      if (ids.length > 0) handleToast(t`Added "${ph({ name: item.displayName })}" to palette.`)
-    },
-    [handleToast, handleDocumentChanged],
-  )
+  /** Library ▸ a material item's "Paint with this" and "Add to Palette":
+   *  Objects are made of filaments (borpa/buildMaterial.ts), so a library
+   *  material has nothing to apply to. */
+  const refuseLibraryMaterial = useCallback((_item: LibraryItem, _bytes: Uint8Array) => {
+    handleToast(t`Library materials are not used here: an Object is made of the filament chosen in the Filaments pane.`)
+  }, [handleToast, t])
+  const onLibraryPaintWith = refuseLibraryMaterial
+  const onLibraryAddToPalette = refuseLibraryMaterial
 
   /** Library ▸ Use on a profile: arm the Fillet tool with it. */
   const onLibraryUseProfile = useCallback(
@@ -6999,8 +6945,6 @@ export default function App() {
       case 'tool-shell':
       case 'tool-project':
       case 'tool-eraser':
-      case 'tool-paint':
-      case 'tool-position-texture':
       case 'tool-move':
       case 'tool-rotate':
       case 'tool-scale':
@@ -8166,58 +8110,6 @@ export default function App() {
     return null
   }, [resyncTagVisibility, handleDocumentChanged])
 
-  // ---------------------------------------------------------------- materials: rename/delete
-
-  /** Rename a palette material (MaterialPalette's inline Finder-style
-   *  editor). Returns inline error text or null on success, mirroring
-   *  handleRenameTag. */
-  const handleRenameMaterial = useCallback((id: bigint, name: string): string | null => {
-    const scene = sceneRef.current
-    if (scene === null) return t`No document.`
-    try {
-      scene.set_material_name(id, name)
-    } catch (err: unknown) {
-      return friendlyErrorText(err)
-    }
-    handleDocumentChanged()
-    return null
-  }, [handleDocumentChanged])
-
-  /** Actually deletes the material — the shared tail of both the
-   *  immediate (unused) and confirmed (used) delete paths. */
-  const doDeleteMaterial = useCallback((id: bigint, name: string) => {
-    const scene = sceneRef.current
-    if (scene === null) return
-    try {
-      scene.delete_material(id)
-    } catch (err: unknown) {
-      handleToast(t`Delete material failed: ${ph({ reason: friendlyErrorText(err) })}`)
-      return
-    }
-    // Unpainting a face/object-base is a rendering change, not just
-    // bookkeeping — re-tessellate so the viewport actually shows it.
-    refreshAfterPanelMutation()
-    // The Paint tool must never keep a deleted material as "current".
-    setCurrentMaterialId((cur) => (cur === id ? MATERIAL_SENTINEL : cur))
-    handleToast(t`Deleted material "${name}".`)
-  }, [refreshAfterPanelMutation, handleToast])
-
-  /** MaterialPalette's × button: an unused material deletes immediately;
-   *  one used on any face/object-base opens the confirm dialog naming how
-   *  many (docs/design/v1.1-cycle.md Lane A). */
-  const handleDeleteMaterial = useCallback((id: bigint) => {
-    const scene = sceneRef.current
-    if (scene === null) return
-    const info = scene.material_info(id)
-    const name = info?.name() ?? 'Material'
-    const usage = scene.material_usage(id)
-    if (usage === 0) {
-      doDeleteMaterial(id, name)
-      return
-    }
-    setPendingMaterialDelete({ id, name, usage })
-  }, [doDeleteMaterial])
-
   // ---------------------------------------------------------------- components: rename/delete
 
   /** Rename a component definition from the Components panel. */
@@ -8325,9 +8217,6 @@ export default function App() {
   }
 
   // Confirmation-dialog bodies: whole sentences with the counts pluralized.
-  const matDeleteName = pendingMaterialDelete?.name ?? ''
-  const matDeleteUsage = pendingMaterialDelete?.usage ?? 0
-  const materialDeleteBody = t`"${matDeleteName}" — used on ${plural(matDeleteUsage, { one: '# face', other: '# faces' })} — delete and unpaint them?`
   const compDeleteName = pendingComponentDelete?.name ?? ''
   const compDeleteUsage = pendingComponentDelete?.usage ?? 0
   const componentDeleteBody = t`Delete "${compDeleteName}" and its ${plural(compDeleteUsage, { one: '# instance', other: '# instances' })}?`
@@ -9553,6 +9442,7 @@ export default function App() {
               onSelectMany={handleReplaceSelection}
               onSelectTag={(path) => revealInTray('tags', path)}
               onSelectMaterial={(id) => revealInTray('materials', id)}
+              onChooseFilament={handleChooseFilament}
               sessionStack={sessionStack}
               sessionMembers={sessionMembers}
               onShowHealth={handleShowObjectHealth}
@@ -9587,19 +9477,10 @@ export default function App() {
             />
           </TraySection>
           <TraySection title={trayTitle.materials} collapsed={!showMaterials} onToggle={() => setShowMaterials((v) => !v)}>
-            <MaterialPalette
-              scene={state.scene}
-              docRev={docRev}
-              docGeneration={docGeneration}
-              currentMaterialId={currentMaterialId}
-              revealNonce={materialRevealNonce}
-              onSelectMaterial={handleSelectMaterial}
-              onMaterialCreated={setCurrentMaterialId}
-              onDocumentChanged={handleDocumentChanged}
-              onAlphaCommitted={() => viewportApi.current?.syncMaterialOpacity()}
-              onSaveToLibrary={handleSaveMaterialToLibrary}
-              onRenameMaterial={handleRenameMaterial}
-              onDeleteMaterial={handleDeleteMaterial}
+            <FilamentSidebar
+              selectionFilaments={selectionFilamentNames}
+              selectedObjectCount={selectedObjects.length}
+              onUseForSelection={handleUseFilamentForSelection}
             />
           </TraySection>
           <TraySection
@@ -9908,24 +9789,6 @@ export default function App() {
             })
           }}
           onCancel={() => setRevertPromptOpen(false)}
-        />
-      )}
-
-      {/* Material delete confirmation — only shown when the material is
-          actually used somewhere (v1.1 assets lane); an unused one deletes
-          immediately with no modal. */}
-      {pendingMaterialDelete !== null && (
-        <ConfirmDialog
-          heading={t`Delete material?`}
-          body={materialDeleteBody}
-          confirmLabel={t`Delete`}
-          danger
-          onConfirm={() => {
-            const { id, name } = pendingMaterialDelete
-            setPendingMaterialDelete(null)
-            doDeleteMaterial(id, name)
-          }}
-          onCancel={() => setPendingMaterialDelete(null)}
         />
       )}
 

@@ -332,7 +332,6 @@ import * as savePanel from './io/savePanel'
 import { isPristineDocument, sameSessionStackIdentity, AUTOSAVE_INTERVAL_MS } from './App'
 import type { DocSessionState } from './io/documentSession'
 import type { Scene } from './wasm/loader'
-import { MATERIAL_SENTINEL } from './tools/PaintTool'
 import { clearOpenAttempt, getFailedOpen } from './log/failedOpen'
 import { clearKernelStop, getKernelStop, getPanicCapture, KERNEL_PANIC_EVENT } from './log/panicCapture'
 import { kernelMemoryBytes } from './wasm/kernelMemory'
@@ -516,11 +515,11 @@ describe('App — loaded state', () => {
     expect(screen.getByTestId('menu-bar')).toBeInTheDocument()
   })
 
-  it('docked tray: Object Info and Outliner expanded by default, Materials and Tags collapsed', async () => {
+  it('docked tray: Object Info and Outliner expanded by default, Filaments and Tags collapsed', async () => {
     await renderAndLoad()
     expect(screen.getByRole('button', { name: /object info/i })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: /outliner/i })).toHaveAttribute('aria-expanded', 'true')
-    expect(screen.getByRole('button', { name: /^materials$/i })).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.getByRole('button', { name: /^filaments$/i })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('button', { name: /^tags$/i })).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -1310,7 +1309,7 @@ describe('App — tray layout persistence', () => {
     await renderAndLoad()
     expect(screen.getByRole('button', { name: /outliner/i })).toHaveAttribute('aria-expanded', 'false')
     expect(screen.getByRole('button', { name: /object info/i })).toHaveAttribute('aria-expanded', 'false')
-    expect(screen.getByRole('button', { name: /^materials$/i })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: /^filaments$/i })).toHaveAttribute('aria-expanded', 'true')
     expect(screen.getByRole('button', { name: /^tags$/i })).toHaveAttribute('aria-expanded', 'false')
   })
 
@@ -4489,11 +4488,10 @@ describe('App — recovery snapshot clearing on clean', () => {
 })
 
 describe('App — v1.1 assets lane: viewport resync + current-material reset after delete/purge', () => {
-  // Material/component delete and purge are panel-driven (MaterialPalette's
-  // ×, ComponentsPanel's ×, the header's Purge Unused… button) — NOT tool
-  // commits, so they don't automatically reach Viewport's internal
-  // handleSceneRefresh the way a tool gesture does. doDeleteMaterial/
-  // doDeleteComponent/confirmPurgeUnused must explicitly call
+  // Component delete and purge are panel-driven (ComponentsPanel's ×, the
+  // header's Purge Unused… button) — NOT tool commits, so they don't
+  // automatically reach Viewport's internal handleSceneRefresh the way a
+  // tool gesture does. doDeleteComponent/confirmPurgeUnused must explicitly call
   // viewportApi.current?.refreshScene() (mirrors onAlphaCommitted's
   // syncMaterialOpacity precedent) or the deleted/purged geometry's
   // rendering never updates even though the kernel already changed.
@@ -4516,37 +4514,6 @@ describe('App — v1.1 assets lane: viewport resync + current-material reset aft
     }
   })
 
-  it('deleting an unused material calls refreshScene and, if it was the current material, resets currentMaterialId to the sentinel', async () => {
-    const redInfo = { name: () => 'Red', r: () => 220, g: () => 30, b: () => 30, a: () => 255, has_texture: () => false, has_pbr: () => false, metallic: () => 0, roughness: () => 1 }
-    stub('material_ids', () => BigUint64Array.from([7n]))
-    stub('material_info', ((id: bigint) => (id === 7n ? redInfo : undefined)) as typeof mockScene.material_info)
-    stub('material_usage', (() => 0) as typeof mockScene.material_usage)
-    const deleteMaterial = vi.fn()
-    stub('delete_material', deleteMaterial as typeof mockScene.delete_material)
-
-    setTrayLayout({ ...DEFAULT_TRAY_LAYOUT, materials: true })
-    await renderAndLoad()
-
-    const { apiRef } = latestViewportProps()
-    const refreshScene = vi.fn()
-    act(() => { if (apiRef !== undefined) apiRef.current = { refreshScene } })
-
-    // Select the swatch as current (Paint tool's active material) — the
-    // thing that must be cleared once its material is gone.
-    fireEvent.click(screen.getByTitle('Red'))
-    expect(latestViewportProps().apiRef?.current).toBeTruthy()
-    expect(vi.mocked(Viewport).mock.calls.at(-1)![0].currentMaterialId).toBe(7n)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Delete material Red' }))
-
-    expect(deleteMaterial).toHaveBeenCalledWith(7n)
-    expect(refreshScene, 'the viewport must re-tessellate after a material delete').toHaveBeenCalled()
-    expect(
-      vi.mocked(Viewport).mock.calls.at(-1)![0].currentMaterialId,
-      'the deleted material must not stay "current"',
-    ).toBe(MATERIAL_SENTINEL)
-  })
-
   it('deleting a component definition with no instances calls refreshScene', async () => {
     stub('component_ids', () => BigUint64Array.from([9n]))
     stub('component_name', ((id: bigint) => (id === 9n ? 'Leg' : undefined)) as typeof mockScene.component_name)
@@ -4567,7 +4534,7 @@ describe('App — v1.1 assets lane: viewport resync + current-material reset aft
     expect(refreshScene, 'the viewport must re-tessellate after a definition delete').toHaveBeenCalled()
   })
 
-  it('Purge Unused calls refreshScene and clears currentMaterialId when the current material was purged', async () => {
+  it('Purge Unused calls refreshScene', async () => {
     const staleInfo = { name: () => 'Stray', r: () => 5, g: () => 5, b: () => 5, a: () => 255, has_texture: () => false, has_pbr: () => false, metallic: () => 0, roughness: () => 1 }
     let purged = false
     stub('material_ids', () => (purged ? new BigUint64Array() : BigUint64Array.from([11n])))
@@ -4579,24 +4546,17 @@ describe('App — v1.1 assets lane: viewport resync + current-material reset aft
       return { materials: () => 1, definitions: () => 0 }
     }) as typeof mockScene.purge_unused)
 
-    setTrayLayout({ ...DEFAULT_TRAY_LAYOUT, materials: true, components: true })
+    setTrayLayout({ ...DEFAULT_TRAY_LAYOUT, components: true })
     await renderAndLoad()
 
     const { apiRef } = latestViewportProps()
     const refreshScene = vi.fn()
     act(() => { if (apiRef !== undefined) apiRef.current = { refreshScene } })
 
-    fireEvent.click(screen.getByTitle('Stray'))
-    expect(vi.mocked(Viewport).mock.calls.at(-1)![0].currentMaterialId).toBe(11n)
-
     fireEvent.click(screen.getByRole('button', { name: 'Purge Unused…' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Purge' }))
 
     expect(refreshScene, 'the viewport must re-tessellate after a purge').toHaveBeenCalled()
-    expect(
-      vi.mocked(Viewport).mock.calls.at(-1)![0].currentMaterialId,
-      'a purged material must not stay "current"',
-    ).toBe(MATERIAL_SENTINEL)
   })
 })
 
@@ -4757,7 +4717,7 @@ describe('App — the native save panel chooses the format', () => {
 // revealInTray, which opens the collapsed pane and selects the target in it.
 // ---------------------------------------------------------------------------
 
-describe('App — revealInTray (Object Info tag chips and Materials row)', () => {
+describe('App — revealInTray (Object Info tag chips and Filament row)', () => {
   const saved = {
     top: mockScene.top_level_nodes,
     objectIds: mockScene.object_ids,
@@ -4772,7 +4732,7 @@ describe('App — revealInTray (Object Info tag chips and Materials row)', () =>
 
   beforeEach(() => {
     vi.clearAllMocks()
-    setTrayLayout(DEFAULT_TRAY_LAYOUT) // Tags and Materials start collapsed
+    setTrayLayout(DEFAULT_TRAY_LAYOUT) // Tags and Filaments start collapsed
     Element.prototype.scrollIntoView = scrolled
     mockScene.top_level_nodes = () => [{ kind: 'object', id: 1n }]
     mockScene.object_ids = () => new BigUint64Array([1n])
@@ -4812,18 +4772,15 @@ describe('App — revealInTray (Object Info tag chips and Materials row)', () =>
     expect(scrolled).toHaveBeenCalled()
   })
 
-  it('a Materials-row entry opens the collapsed Materials pane and makes that material the current one without picking Paint', async () => {
+  it('a Filament-row entry opens the collapsed Filaments pane without switching tools', async () => {
     await renderAndLoad()
     fireEvent.click(screen.getByText('Beam'))
-    expect(sectionHeader(/^materials$/i).getAttribute('aria-expanded')).toBe('false')
+    expect(sectionHeader(/^filaments$/i).getAttribute('aria-expanded')).toBe('false')
 
     fireEvent.click(within(screen.getByTestId('object-info-materials')).getByText('Oak'))
 
-    expect(sectionHeader(/^materials$/i).getAttribute('aria-expanded')).toBe('true')
-    const swatch = await screen.findByTitle('Oak')
-    expect(swatch.style.borderColor).toContain('accent-base')
-    expect(scrolled).toHaveBeenCalled()
-    // Selecting here does not switch tools the way picking in the palette does.
+    expect(sectionHeader(/^filaments$/i).getAttribute('aria-expanded')).toBe('true')
+    expect(screen.getByTestId('filament-sidebar')).toBeInTheDocument()
     expect(screen.getByTitle('Rectangle (R)')).toBeInTheDocument()
     expect(vi.mocked(Viewport).mock.calls.at(-1)?.[0]).toMatchObject({ activeTool: 'Select' })
   })

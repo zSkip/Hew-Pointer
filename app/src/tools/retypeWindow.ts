@@ -82,11 +82,13 @@ export class RetypeWindow<Spec> {
     this.hot = { spec, historyGen: this.gen(), entries: Math.max(1, entries) }
   }
 
-  /** `arm` with the entry count measured as the generation delta since
-   *  `genBefore` (read just before the commit) — every recorded action moves
-   *  the generation by one, so the delta IS the step count. */
-  armFrom(spec: Spec, genBefore: bigint): void {
-    this.arm(spec, Number(this.genN() - genBefore))
+  /** `arm` with the entry count measured since the commit began: the depth
+   *  delta when `depthBefore` (the undo depth read just before the commit)
+   *  is given, which stays right when the commit ran in a history bracket,
+   *  else the generation delta since `genBefore` — every unbracketed action
+   *  moves the generation by one. */
+  armFrom(spec: Spec, genBefore: bigint, depthBefore: number | null = null): void {
+    this.arm(spec, this.stepsSince(depthBefore, genBefore))
   }
 
   close(): void {

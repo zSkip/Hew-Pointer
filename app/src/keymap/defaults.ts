@@ -60,7 +60,6 @@ function allDefaultBindings({ isMac, isDesktop }: KeymapPlatform): Bindings {
     'tool-rotate': ['Q', '5', ...mac('Mod+8')],
     'tool-scale': ['S', '6', ...mac('Mod+9')],
     'tool-tape-measure': ['T', ...mac('Mod+D')],
-    'tool-paint': ['B'],
     'tool-orbit': ['O', ...mac('Mod+B')],
     'tool-pan': ['H', ...mac('Mod+R')],
     'tool-zoom': ['Z', ...mac('Mod+\\')],
