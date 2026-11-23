@@ -3927,6 +3927,14 @@ export default function App() {
       // nothing is unsaved. Without the mark the document would read dirty
       // (and Undo-to-clean would never land) right after opening.
       scene.mark_saved()
+      // One filament per Object, as for any document opened from before
+      // filaments: a step of its own after the saved mark, since the file
+      // itself still holds the SketchUp materials.
+      try {
+        flattenDocument(scene)
+      } catch (err: unknown) {
+        LogStore.log.error('app', `Could not give the document's Objects a filament: ${String(err)}`)
+      }
       skpSourceGenRef.current += 1
       clearOpenAttempt()
     } catch (err: unknown) {

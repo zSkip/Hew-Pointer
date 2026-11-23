@@ -6,7 +6,13 @@
  * Thicken, 3D text) gives the Objects it made the selected filament, in the
  * same undo step: the operation and the assignment run inside one history
  * bracket, labeled as the operation's own step. An import gives every Object
- * it brought in the filament, clearing the colours and textures it came with.
+ * it brought in the filament, clearing the colours and textures it came with,
+ * in the import's own step the same way.
+ *
+ * A refused operation throws its own error unchanged, and the bracket is
+ * aborted on the way out, so no empty or half-applied step is left behind.
+ * Redo replays the step whole: the Object and its filament come back
+ * together.
  *
  * Wrapping the Scene is the one shared place every tool, panel and menu
  * command already goes through, so no tool needs to know about filaments.
@@ -58,7 +64,13 @@ function giveFilament(scene: WasmScene, objects: readonly bigint[], mode: Assign
   assignFilament(scene, filament, objects, mode, i18n._(ASSIGN_FILAMENT_LABEL))
 }
 
-function runCreating(proxy: WasmScene, target: WasmScene, method: (...a: unknown[]) => unknown, args: unknown[]): unknown {
+/**
+ * Run `method` and give the Objects it made the selected filament, as one
+ * undo step labeled as the operation. `mode` is `'unassigned'` for modelling
+ * operations (a piece split off an Object keeps its filament) and `'all'` for
+ * imports.
+ */
+function runBuilding(proxy: WasmScene, target: WasmScene, method: (...a: unknown[]) => unknown, args: unknown[], mode: AssignMode): unknown {
   if (selectedFilament() === null) return method.apply(target, args)
   let label = ''
   return inHistoryBracket(
@@ -71,24 +83,13 @@ function runCreating(proxy: WasmScene, target: WasmScene, method: (...a: unknown
       label = topEntryLabel(target) ?? i18n._(ASSIGN_FILAMENT_LABEL)
       const made = [...allObjectIds(target)].filter((id) => !before.has(id))
       try {
-        giveFilament(target, made, 'unassigned')
+        giveFilament(target, made, mode)
       } catch (err) {
-        console.error('Borpa: the new geometry kept no filament', err)
+        console.error('Borpa: the new Objects kept the materials they were made with', err)
       }
       return result
     },
   )
-}
-
-function runImport(target: WasmScene, method: (...a: unknown[]) => unknown, args: unknown[]): unknown {
-  const before = allObjectIds(target)
-  const result = method.apply(target, args)
-  try {
-    giveFilament(target, [...allObjectIds(target)].filter((id) => !before.has(id)), 'all')
-  } catch (err) {
-    console.error('Borpa: the imported Objects kept their own materials', err)
-  }
-  return result
 }
 
 /**
@@ -101,8 +102,8 @@ export function withBuildFilament(scene: WasmScene): WasmScene {
       const value: unknown = Reflect.get(target, prop, target)
       if (typeof prop !== 'string' || typeof value !== 'function') return value
       const method = value as (...a: unknown[]) => unknown
-      if (CREATING.test(prop) && !prop.includes('preview')) return (...args: unknown[]) => runCreating(proxy, target, method, args)
-      if (IMPORTING.test(prop)) return (...args: unknown[]) => runImport(target, method, args)
+      if (CREATING.test(prop) && !prop.includes('preview')) return (...args: unknown[]) => runBuilding(proxy, target, method, args, 'unassigned')
+      if (IMPORTING.test(prop)) return (...args: unknown[]) => runBuilding(proxy, target, method, args, 'all')
       return value
     },
   })

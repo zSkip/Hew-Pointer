@@ -15,6 +15,7 @@ import type { Scene as WasmScene } from '../wasm/loader'
 import { assignFilament, colourChannels, readFilamentLinks } from './buildMaterial'
 import { allObjectIds, flattenDocument, withBuildFilament } from './filamentScene'
 import { GENERIC_FILAMENTS, resetFilamentsForTest, selectFilament, type Filament } from './filaments'
+import { inHistoryBracket } from '../tools/transformSelection'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
@@ -47,6 +48,39 @@ function makeBox(s: WasmScene, x0 = 0): bigint {
   const regions = Array.from(s.sketch_regions(sketch))
   return s.extrude_region(sketch, regions[0], 1)
 }
+
+/** A tetrahedron, in millimetres. */
+const TETRA_STL = `solid t
+facet normal 0 0 -1
+ outer loop
+  vertex 0 0 0
+  vertex 0 10 0
+  vertex 10 0 0
+ endloop
+endfacet
+facet normal 0 -1 0
+ outer loop
+  vertex 0 0 0
+  vertex 10 0 0
+  vertex 0 0 10
+ endloop
+endfacet
+facet normal -1 0 0
+ outer loop
+  vertex 0 0 0
+  vertex 0 0 10
+  vertex 0 10 0
+ endloop
+endfacet
+facet normal 1 1 1
+ outer loop
+  vertex 10 0 0
+  vertex 0 10 0
+  vertex 0 0 10
+ endloop
+endfacet
+endsolid t
+`
 
 /** The Object's materials by name: its base and any per-face paint. */
 function materialNames(s: WasmScene, object: bigint): string[] {
@@ -104,6 +138,40 @@ describe('new geometry is built in the selected filament', () => {
     expect(scene.material_ids().length).toBe(1)
   })
 
+  it('leaves no step behind when the operation is refused, and passes its error on unchanged', () => {
+    const sketch = scene.begin_sketch_on_plane(0, 0, 0, 0, 0, 1)
+    const raw = new Scene() as unknown as WasmScene
+    const rawSketch = raw.begin_sketch_on_plane(0, 0, 0, 0, 0, 1)
+    const refusal = (s: WasmScene, sk: bigint): string => {
+      try {
+        s.extrude_region(sk, 12345n, 1)
+      } catch (err) {
+        return err instanceof Error ? err.message : String(err)
+      }
+      return 'no error'
+    }
+    const depth = scene.undo_depth()
+    const entries = scene.history_entries_json()
+    const expected = refusal(raw, rawSketch)
+    expect(expected).not.toBe('no error')
+    expect(refusal(scene, sketch)).toBe(expected)
+    expect(scene.undo_depth()).toBe(depth)
+    expect(scene.history_entries_json()).toBe(entries)
+    expect(scene.material_ids().length).toBe(0)
+    // The bracket was closed: the next Object is its own single step.
+    makeBox(scene)
+    expect(scene.undo_depth()).toBeGreaterThan(depth)
+  })
+
+  it('adds no step for a bracket that changed nothing', () => {
+    makeBox(scene)
+    const depth = scene.undo_depth()
+    const entries = scene.history_entries_json()
+    inHistoryBracket(scene, 'Nothing', () => undefined)
+    expect(scene.undo_depth()).toBe(depth)
+    expect(scene.history_entries_json()).toBe(entries)
+  })
+
   it('leaves new geometry without a filament when none is selected', () => {
     resetFilamentsForTest([], null)
     const box = makeBox(scene)
@@ -132,43 +200,25 @@ describe('one filament per Object', () => {
   })
 
   it('gives every imported Object the selected filament', () => {
-    // A tetrahedron, in millimetres.
-    const stl = `solid t
-facet normal 0 0 -1
- outer loop
-  vertex 0 0 0
-  vertex 0 10 0
-  vertex 10 0 0
- endloop
-endfacet
-facet normal 0 -1 0
- outer loop
-  vertex 0 0 0
-  vertex 10 0 0
-  vertex 0 0 10
- endloop
-endfacet
-facet normal -1 0 0
- outer loop
-  vertex 0 0 0
-  vertex 0 0 10
-  vertex 0 10 0
- endloop
-endfacet
-facet normal 1 1 1
- outer loop
-  vertex 10 0 0
-  vertex 0 10 0
-  vertex 0 0 10
- endloop
-endfacet
-endsolid t
-`
     selectFilament('Generic PLA')
-    scene.import_stl(new TextEncoder().encode(stl), 0.001, 'tetra')
+    scene.import_stl(new TextEncoder().encode(TETRA_STL), 0.001, 'tetra')
     const objects = [...allObjectIds(scene)]
     expect(objects.length).toBe(1)
     expect(materialNames(scene, objects[0])).toEqual(['Generic PLA'])
+  })
+
+  it('makes an import and its filament one undo step, which redo restores whole', () => {
+    selectFilament('Generic ABS')
+    const depth = scene.undo_depth()
+    scene.import_stl(new TextEncoder().encode(TETRA_STL), 0.001, 'tetra')
+    expect(scene.undo_depth()).toBe(depth + 1)
+    const [object] = [...allObjectIds(scene)]
+    const [material] = Array.from(scene.object_materials(object))
+    scene.scene_undo().free()
+    expect(allObjectIds(scene).size).toBe(0)
+    scene.scene_redo().free()
+    expect(materialNames(scene, object)).toEqual(['Generic ABS'])
+    expect(readFilamentLinks(scene).get(material)?.preset).toBe('Generic ABS')
   })
 
   it('gives the selected Objects another filament in one undo step', () => {

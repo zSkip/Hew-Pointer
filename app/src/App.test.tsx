@@ -98,6 +98,10 @@ const mockScene = {
   undo_depth: () => 0,
   redo_depth: () => 0,
   history_entries_json: () => JSON.stringify({ undo: [], redo: [], savedDepth: null }),
+  // Imports run in a history bracket with their filament (borpa/filamentScene.ts).
+  history_bracket_open: vi.fn(),
+  history_bracket_commit: vi.fn(() => false),
+  history_bracket_abort: vi.fn(),
   geo_reference_json: () => 'null',
   // save() is called once to snapshot the blank scene for "New" resets.
   save: () => new Uint8Array(),
