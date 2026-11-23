@@ -36,6 +36,7 @@ import { CREASE_ERRORS } from './kernelErrorCopy/crease'
 import { PATH_ARRAY_ERRORS } from './kernelErrorCopy/pathArray'
 import { SHAPE_COMMON_ERRORS } from './kernelErrorCopy/shapeCommon'
 import { REMOVE_DEGENERATE_FACES_ERRORS } from './kernelErrorCopy/removeDegenerateFaces'
+import { DIMENSION_DRIVE_ERRORS } from './kernelErrorCopy/dimensionDrive'
 
 // Every entry below is a whole sentence pair written out in full, including
 // the shared tail ("To make it solid, ..." / "If this keeps happening, ..."),
@@ -135,6 +136,7 @@ function inLegacyOrder(table: Record<string, MessageDescriptor>): Record<string,
  * keyed by the `"CODE: message"` prefix.
  */
 const DESCRIPTIONS: Record<string, MessageDescriptor> = {
+  ...DIMENSION_DRIVE_ERRORS,
   // ------------------------------------------------------- stale handles
   UnknownObject: msg`That object is no longer there — the model changed since it was picked. Click it again.`,
   UnknownFace: msg`That face is no longer there — the model changed since it was picked. Click it again.`,

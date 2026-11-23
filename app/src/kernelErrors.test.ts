@@ -197,6 +197,7 @@ const serializeRs = readRust('crates/kernel/src/serialize.rs')
 const repairRs = readRust('crates/kernel/src/repair.rs')
 const shapeErrorRs = readRust('crates/kernel/src/shape_error.rs')
 const blendErrorRs = readRust('crates/kernel/src/blend/error.rs')
+const dimensionDriveRs = readRust('crates/kernel/src/document/dimension_drive.rs')
 const wasmApiRs = readRust('crates/wasm-api/src/lib.rs')
 // The Scenes boundary lives in its own module (docs/design/scenes.md §3.3)
 // and mints its own literal codes.
@@ -249,6 +250,7 @@ const LEAF_ENUMS: ReadonlyArray<readonly [string, string]> = [
   ['RepairError', repairRs],
   ['ShapeError', shapeErrorRs],
   ['BlendError', blendErrorRs],
+  ['DimensionDriveError', dimensionDriveRs],
 ]
 const leafErrorCodes = LEAF_ENUMS.flatMap(([name, source]) => extractEnumVariants(source, name))
 

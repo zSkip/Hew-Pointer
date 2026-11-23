@@ -70,6 +70,7 @@ mod definition_delete_undo_specs;
 mod deform_specs;
 mod detached_sketch_specs;
 mod determinism;
+mod dimension_drive_specs;
 mod doc_fuzz_repro_union_imprint_merge;
 mod doc_replay_diverge_repro;
 mod doc_save_load_hash_repro;

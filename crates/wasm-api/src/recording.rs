@@ -845,6 +845,10 @@ pub enum RecordedCall {
         plane: [f64; 6],
         text_override: Option<String>,
     },
+    /// `set_linear_dimension_length(id, length)` — a driving dimension
+    /// edit. Additive variant, same posture as
+    /// [`RecordedCall::AddLinearDimension`].
+    SetLinearDimensionLength { id: u64, length: f64 },
     /// `update_radial_dimension(id, ...)`. Additive variant, same posture as
     /// [`RecordedCall::AddLinearDimension`].
     #[allow(clippy::too_many_arguments)]

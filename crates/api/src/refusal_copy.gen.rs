@@ -6,6 +6,31 @@
 /// `Display` text for those.
 pub fn ui_copy(code: &str) -> Option<&'static str> {
     Some(match code {
+        "NotLinearDimension" => {
+            "Only a straight dimension can change the model. Type a label instead, or measure with a straight dimension."
+        }
+        "DimensionDetached" => {
+            "This dimension is no longer attached to the model, so it can't move it. Draw the dimension again."
+        }
+        "FreeAnchors" => {
+            "Neither end of this dimension is on an object, so there is nothing to move."
+        }
+        "AnchorNotOnObject" => {
+            "This dimension ends on a group or component, which a dimension can't resize yet. Open it for editing and dimension the object inside."
+        }
+        "AnchorOffGeometry" => {
+            "An end of this dimension is no longer on its object. Draw the dimension again."
+        }
+        "NoSquareFace" => {
+            "No flat face is square to this dimension at either end, so the model can't be moved to match it. Dimension along an edge, between faces that face each other."
+        }
+        "AmbiguousFace" => {
+            "This dimension ends where two faces meet, so which one to move is unclear. Dimension to a point inside one face."
+        }
+        "InvalidDimensionLength" => "A dimension needs a length greater than zero.",
+        "WouldCutThrough" => {
+            "That length would push the face into other parts of the object. Use Push/Pull to cut or join through it."
+        }
         "UnknownObject" => {
             "That object is no longer there — the model changed since it was picked. Click it again."
         }

@@ -355,6 +355,7 @@ longer replay.
 | `add_leader_text` | `anchor_node_kind`, `anchor_node_id`, `anchor_point[3]`, `offset[3]`, `text` | add a leader text annotation pointing at an anchor |
 | `update_linear_dimension` | `id`, plus the `add_linear_dimension` fields | change an existing linear dimension |
 | `update_radial_dimension` | `id`, plus the `add_radial_dimension` fields | change an existing radial dimension |
+| `set_linear_dimension_length` | `id`, `length` | set a linear dimension's length by moving the model |
 | `update_leader_text` | `id`, plus the `add_leader_text` fields | change an existing leader text annotation |
 | `delete_annotation` | `id` | delete one annotation |
 | `import_dae` | `bytes[]`, `images[]` (`{uri, bytes[], format}` objects) | additive COLLADA import (embeds the file + images) |

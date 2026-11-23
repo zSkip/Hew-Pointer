@@ -362,6 +362,7 @@ fn doc_err(e: DocumentError) -> ApiError {
         DocumentError::Repair(inner) => api_err(inner, &e),
         DocumentError::Shape(inner) => api_err(inner, &e),
         DocumentError::Blend(inner) => api_err(inner, &e),
+        DocumentError::DimensionDrive(inner) => api_err(inner, &e),
         // The indirect lock (OW-1) answers a code of its own, so the app
         // can say why and offer Make Unique first: the shape is also used
         // inside something locked.
@@ -12678,6 +12679,39 @@ impl Scene {
         Ok(())
     }
 
+    /// Sets a live linear dimension's length to `length` meters by moving
+    /// the model, then the dimension with it: the flat face square to the
+    /// dimension at its second end (else its first) is pushed or pulled, or,
+    /// when the two ends lie on different objects, the second end's object
+    /// is moved along the dimension. The dimension's label override is
+    /// cleared. One undo entry restores the geometry and the dimension
+    /// together ([`kernel::Document::set_linear_dimension_length`]).
+    ///
+    /// # Errors
+    /// Every refusal leaves the document unchanged.
+    /// - `UnknownAnnotation` — stale, hidden, or foreign handle.
+    /// - The drive's own refusals, by name: `NotLinearDimension`,
+    ///   `DimensionDetached`, `FreeAnchors`, `AnchorNotOnObject`,
+    ///   `AnchorOffGeometry`, `NoSquareFace`, `AmbiguousFace`,
+    ///   `InvalidDimensionLength`, `WouldCutThrough`.
+    /// - `DegenerateAnnotation` — the stored anchors coincide.
+    /// - Any refusal of the Push/Pull or Move itself, under its own code
+    ///   (for example `WouldVanish`, `LockedNode`).
+    pub fn set_linear_dimension_length(
+        &mut self,
+        id: u64,
+        length: f64,
+    ) -> Result<DocChangeJs, ApiError> {
+        self.ensure_not_busy()?;
+        let (_, change) = self
+            .doc
+            .set_linear_dimension_length(annotation_id(id), length)
+            .map_err(doc_err)?;
+        self.reconcile(&change);
+        recording::record(recording::RecordedCall::SetLinearDimensionLength { id, length });
+        Ok(DocChangeJs { inner: change })
+    }
+
     /// Replaces a live radial dimension's anchor/kind/curve/leader/override in
     /// place. Clears `detached` only when an anchor/kind/curve/leader field
     /// actually changed — a `text_override`-only edit leaves an existing
@@ -15527,6 +15561,9 @@ impl Scene {
                         &plane,
                         text_override,
                     )?;
+                }
+                SetLinearDimensionLength { id, length } => {
+                    self.set_linear_dimension_length(id, length)?;
                 }
                 UpdateRadialDimension {
                     id,

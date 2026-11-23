@@ -1248,6 +1248,10 @@ msgstr ""
 msgid "A cove needs an outside edge."
 msgstr ""
 
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "A dimension needs a length greater than zero."
+msgstr ""
+
 #: src/kernelErrors.ts
 msgid "A dimension or label can't carry attributes. Put them on the object it measures instead."
 msgstr ""
@@ -1552,6 +1556,10 @@ msgstr ""
 
 #: src/tools/ArcTool.ts
 msgid "An arc stays on its drawing plane. Move the cursor along the plane, or press an arrow key to change it, then type the length."
+msgstr ""
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "An end of this dimension is no longer on its object. Draw the dimension again."
 msgstr ""
 
 #: src/palette/registry.ts
@@ -6590,6 +6598,10 @@ msgstr ""
 msgid "Needs your help"
 msgstr ""
 
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "Neither end of this dimension is on an object, so there is nothing to move."
+msgstr ""
+
 #: src/i18n/nativeMenu.ts
 #: src/palette/registry.ts
 #: src/panels/MenuBar.tsx
@@ -6678,6 +6690,10 @@ msgstr ""
 
 #: src/log/reportBundle.ts
 msgid "No file failed to open."
+msgstr ""
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "No flat face is square to this dimension at either end, so the model can't be moved to match it. Dimension along an edge, between faces that face each other."
 msgstr ""
 
 #: src/log/reportBundle.ts
@@ -7160,6 +7176,10 @@ msgstr ""
 
 #: src/kernelErrors.ts
 msgid "Only a solid can be sliced. To make it solid, select it and choose Object ▸ Make Solid…"
+msgstr ""
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "Only a straight dimension can change the model. Type a label instead, or measure with a straight dimension."
 msgstr ""
 
 #: src/kernelErrors.ts
@@ -10439,6 +10459,10 @@ msgstr ""
 msgid "That isn't available while a group or component is open for editing. Close it first (Escape, or double-click outside), then try again."
 msgstr ""
 
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "That length would push the face into other parts of the object. Use Push/Pull to cut or join through it."
+msgstr ""
+
 #: src/shop/ShopApp.tsx
 msgid "That link could not be decrypted — ask for a fresh one from the desktop."
 msgstr ""
@@ -11136,6 +11160,18 @@ msgstr ""
 #: src/panels/ObjectInfoPanel.tsx
 #~ msgid "This copy only — leave empty to show the shared name"
 #~ msgstr ""
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "This dimension ends on a group or component, which a dimension can't resize yet. Open it for editing and dimension the object inside."
+msgstr ""
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "This dimension ends where two faces meet, so which one to move is unclear. Dimension to a point inside one face."
+msgstr ""
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "This dimension is no longer attached to the model, so it can't move it. Draw the dimension again."
+msgstr ""
 
 #: src/panels/UnsavedChangesDialog.tsx
 msgid "This document has unsaved changes."

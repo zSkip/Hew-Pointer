@@ -1248,6 +1248,10 @@ msgstr "A connected tool undid history in the middle of its own batch, so the wh
 msgid "A cove needs an outside edge."
 msgstr "A cove needs an outside edge."
 
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "A dimension needs a length greater than zero."
+msgstr "A dimension needs a length greater than zero."
+
 #: src/kernelErrors.ts
 msgid "A dimension or label can't carry attributes. Put them on the object it measures instead."
 msgstr "A dimension or label can't carry attributes. Put them on the object it measures instead."
@@ -1553,6 +1557,10 @@ msgstr "Amount"
 #: src/tools/ArcTool.ts
 msgid "An arc stays on its drawing plane. Move the cursor along the plane, or press an arrow key to change it, then type the length."
 msgstr "An arc stays on its drawing plane. Move the cursor along the plane, or press an arrow key to change it, then type the length."
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "An end of this dimension is no longer on its object. Draw the dimension again."
+msgstr "An end of this dimension is no longer on its object. Draw the dimension again."
 
 #: src/palette/registry.ts
 msgid "angle"
@@ -6596,6 +6604,10 @@ msgstr "Needs mending"
 msgid "Needs your help"
 msgstr "Needs your help"
 
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "Neither end of this dimension is on an object, so there is nothing to move."
+msgstr "Neither end of this dimension is on an object, so there is nothing to move."
+
 #: src/i18n/nativeMenu.ts
 #: src/palette/registry.ts
 #: src/panels/MenuBar.tsx
@@ -6685,6 +6697,10 @@ msgstr "no file failed to open"
 #: src/log/reportBundle.ts
 msgid "No file failed to open."
 msgstr "No file failed to open."
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "No flat face is square to this dimension at either end, so the model can't be moved to match it. Dimension along an edge, between faces that face each other."
+msgstr "No flat face is square to this dimension at either end, so the model can't be moved to match it. Dimension along an edge, between faces that face each other."
 
 #: src/log/reportBundle.ts
 msgid "no imported files"
@@ -7167,6 +7183,10 @@ msgstr "Only a shape drawn on a face can be moved or deleted this way — and on
 #: src/kernelErrors.ts
 msgid "Only a solid can be sliced. To make it solid, select it and choose Object ▸ Make Solid…"
 msgstr "Only a solid can be sliced. To make it solid, select it and choose Object ▸ Make Solid…"
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "Only a straight dimension can change the model. Type a label instead, or measure with a straight dimension."
+msgstr "Only a straight dimension can change the model. Type a label instead, or measure with a straight dimension."
 
 #: src/kernelErrors.ts
 msgid "Only a whole, untouched circle can have its segment count changed — not a part-erased one, and not one other lines run into. Redraw the circle at the count you want."
@@ -10445,6 +10465,10 @@ msgstr "That isn't a valid tag name — it can't be empty, and a tag can't be mo
 msgid "That isn't available while a group or component is open for editing. Close it first (Escape, or double-click outside), then try again."
 msgstr "That isn't available while a group or component is open for editing. Close it first (Escape, or double-click outside), then try again."
 
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "That length would push the face into other parts of the object. Use Push/Pull to cut or join through it."
+msgstr "That length would push the face into other parts of the object. Use Push/Pull to cut or join through it."
+
 #: src/shop/ShopApp.tsx
 msgid "That link could not be decrypted — ask for a fresh one from the desktop."
 msgstr "That link could not be decrypted — ask for a fresh one from the desktop."
@@ -11148,6 +11172,18 @@ msgstr "This copy of Hew was installed with Portage, so Portage updates it. To u
 #: src/panels/ObjectInfoPanel.tsx
 #~ msgid "This copy only — leave empty to show the shared name"
 #~ msgstr "This copy only — leave empty to show the shared name"
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "This dimension ends on a group or component, which a dimension can't resize yet. Open it for editing and dimension the object inside."
+msgstr "This dimension ends on a group or component, which a dimension can't resize yet. Open it for editing and dimension the object inside."
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "This dimension ends where two faces meet, so which one to move is unclear. Dimension to a point inside one face."
+msgstr "This dimension ends where two faces meet, so which one to move is unclear. Dimension to a point inside one face."
+
+#: src/kernelErrorCopy/dimensionDrive.ts
+msgid "This dimension is no longer attached to the model, so it can't move it. Draw the dimension again."
+msgstr "This dimension is no longer attached to the model, so it can't move it. Draw the dimension again."
 
 #: src/panels/UnsavedChangesDialog.tsx
 msgid "This document has unsaved changes."

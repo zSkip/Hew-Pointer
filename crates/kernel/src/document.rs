@@ -37,6 +37,7 @@ mod cells;
 mod change_sets;
 mod clipboard;
 mod curves;
+mod dimension_drive;
 mod draft;
 mod history_budget;
 mod library_link;
@@ -48,6 +49,7 @@ pub use curves::{
     BlendPreview, LoftSource, MAX_ARRAY_COUNT, PathArraySpec, ReshapeReport, ReshapeSpec,
     RevolveProfile, RevolveSpec,
 };
+pub use dimension_drive::{DimensionDrive, DimensionDriveError, DimensionDriveMove, DimensionEnd};
 pub use draft::{
     ClosingEdge, DraftCurveRun, DraftEdge, DraftRegion, DraftRegionWhy, DraftReport, DraftStore,
     DraftUnit, PlaneListing, PlaneUnits,
@@ -4138,6 +4140,9 @@ pub enum DocumentError {
     Shape(crate::shape_error::ShapeError),
     /// A fillet or chamfer refused ([`Object::blend_edges`]).
     Blend(crate::blend::BlendError),
+    /// Setting a linear dimension's length refused
+    /// ([`Document::set_linear_dimension_length`]).
+    DimensionDrive(DimensionDriveError),
     /// Redoing an in-place reshape did not reproduce its result: the
     /// recorded spec refused on the recorded snapshot. A kernel bug channel;
     /// the model is unchanged.
@@ -4468,6 +4473,7 @@ impl std::fmt::Display for DocumentError {
             DocumentError::Repair(e) => write!(f, "{e}"),
             DocumentError::Shape(e) => write!(f, "{e}"),
             DocumentError::Blend(e) => write!(f, "{e}"),
+            DocumentError::DimensionDrive(e) => write!(f, "{e}"),
             DocumentError::ReshapeRedoDiverged => {
                 write!(f, "redoing the change did not reproduce it (kernel bug)")
             }

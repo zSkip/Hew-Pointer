@@ -141,6 +141,7 @@ import type { Snap, SnapConstraint, Tool, EditContext } from '../tools/types'
 import { toolHasArmedGesture } from '../tools/types'
 import { rayPlaneIntersect, subV3, addV3, perpComponentV3, type V3 } from './geoHelpers'
 import { readAnnotation, commitAnnotationText, initialEditorText, type AnnotationSnapshot } from './annotationEdit'
+import { driveDimensionLength } from './driveDimension'
 import { collectLeafIds, isDraftKind, nodeEq, nodeKey, nodeRefFromJs, placementLabel, resolveLabel, selKey, structuralSelection, treeIndexOf, type NodeRef, type SelItem, type SelectMode } from '../panels/treeModel'
 import { selectModeFor, isModifiedSelectPress } from './selectModifiers'
 import { deleteStepLabel } from './deleteLabel'
@@ -8250,6 +8251,18 @@ export default function Viewport({
         // text_override — an empty leader is just a leader with nothing to
         // say, so leave the prior content alone instead).
         if (pending.snapshot.kind === 'leader' && text.trim() === '') return
+        // A length typed into a linear dimension drives the model; any
+        // other text stays a label (driveDimension.ts).
+        const drive = driveDimensionLength(wasmScene, pending.id, pending.snapshot, text)
+        if (drive.kind === 'refused') {
+          handleToast(drive.message)
+          return
+        }
+        if (drive.kind === 'driven') {
+          handleSceneRefresh()
+          sceneRenderer.refreshAllSketches()
+          return
+        }
         try {
           commitAnnotationText(wasmScene, pending.id, pending.snapshot, text)
         } catch (err) {
