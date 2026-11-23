@@ -173,6 +173,7 @@ import { makePrintHost } from './print/printHost'
 import { TextDialog, type TextDialogResult } from './panels/TextDialog'
 import { layoutGlyphRun } from './text/glyphRun'
 import { collectNonSolidObjects } from './io/solidGating'
+import { installBorpaBridge, isBorpa } from './borpa/host'
 import { friendlyErrorText, isErrorLevelCode, kernelErrorMessage, parseKernelErrorCode } from './kernelErrors'
 import { CommandPalette } from './palette/CommandPalette'
 import { toolHint, toolActionId, type PaletteEntry } from './palette/registry'
@@ -5061,6 +5062,21 @@ export default function App() {
     }
     await (format === 'stl' ? doExportStl() : doExport3mf())
   }, [doExportStl, doExport3mf])
+
+  // Embedded in Borpa (borpa/host.ts): the host's "Send to Prepare" asks for
+  // the document as a 3MF. Reads refs only, so it is installed once.
+  useEffect(() => {
+    if (!isBorpa) return
+    return installBorpaBridge(async () => {
+      const api = viewportApi.current
+      if (api === null) return { code: 'not-ready' }
+      const scene = sceneRef.current
+      const nonSolid = scene !== null ? collectNonSolidObjects(scene).length : 0
+      const bytes = await api.export3mf(exportCagesRef.current)
+      if (bytes === null) return { code: 'empty' }
+      return { name: documentBaseName(docSessionRef.current), bytes, nonSolid }
+    })
+  }, [])
 
   // ---------------------------------------------------------------- unified Export dialog
   // File ▸ Export… opens ONE dialog with a Format select (glTF/STL/3MF/USDZ) —

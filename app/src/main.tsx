@@ -19,6 +19,7 @@ const UpdateWindow = React.lazy(() =>
   import('./updater/UpdateWindow.tsx').then((m) => ({ default: m.UpdateWindow })),
 )
 import { isTauri } from './io/fileHost'
+import { isBorpa } from './borpa/host'
 import { initThemeSync } from './theme/applyTheme'
 import { i18n } from '@lingui/core'
 import { I18nProvider } from '@lingui/react'
@@ -105,11 +106,13 @@ try {
 // windows), and offline availability at the workbench — no wifi, no
 // problem — is the entire point of it existing (`shop/ShopApp.tsx`'s doc
 // comment). Do not add `isShopWindow` to this condition.
-if (!isSettingsWindow && !isLibraryWindow && !isUpdateWindow && !isProbeWindow && !isTauri && import.meta.env.PROD && 'serviceWorker' in navigator) {
+// Borpa (isBorpa) is treated like Tauri: it serves the bundle itself, and a
+// SW would keep serving an old bundle after the host app is updated.
+if (!isSettingsWindow && !isLibraryWindow && !isUpdateWindow && !isProbeWindow && !isTauri && !isBorpa && import.meta.env.PROD && 'serviceWorker' in navigator) {
   import('virtual:pwa-register').then(({ registerSW }) =>
     registerSW({ immediate: true }),
   )
-} else if (isTauri && 'serviceWorker' in navigator) {
+} else if ((isTauri || isBorpa) && 'serviceWorker' in navigator) {
   // Defensive: the desktop webview must never be controlled by a PWA service
   // worker. A stale SW left in the webview profile (e.g. from an earlier build)
   // would serve its cached app shell over the dev/bundled assets and blank the
