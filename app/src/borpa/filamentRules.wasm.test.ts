@@ -18,7 +18,7 @@ import { PREVIEW_EXTRUDE_NEW_FALLBACK } from '../tools/previewTint'
 import type { Snap } from '../tools/types'
 import { friendlyErrorText, kernelErrorMessage, parseKernelErrorCode } from '../kernelErrors'
 import { getLengthUnit, setLengthUnit, type LengthFormat } from '../settings/units'
-import { withBuildFilament } from './filamentScene'
+import { flattenDocument, withBuildFilament } from './filamentScene'
 import { FILAMENT_REFUSAL_CODE } from './filamentRules'
 import { GENERIC_FILAMENTS, resetFilamentsForTest, selectFilament } from './filaments'
 import { differsFromSelected, filamentDifference } from './objectFilament'
@@ -565,5 +565,196 @@ describe('operations that would add to an Object of another filament', () => {
     expectRefused(thrown(() => scene.project_depth(box, sketch, faces, -0.1, 0)), PETG, PLA)
     scene.project_depth(box, sketch, faces, 0.1, 0).free()
     expect(measure(scene, box).volume).toBeLessThan(1)
+  })
+})
+
+describe('Ctrl/Cmd + push into a face of another filament: an inlay', () => {
+  /** The goal's PETG box with a rectangle on its top, PLA selected, Ctrl on. */
+  function inlaySetup() {
+    const box = petgBoxWithRectangle()
+    const h = harness(scene)
+    h.tool.toggleExtrudeAsNew()
+    return { box, ...h }
+  }
+
+  /** Click the rectangle and type a signed distance. */
+  function typed(tool: PushPullTool, text: string): void {
+    tool.onPointerMove(on(0.5, 0.5, 1), down(0.5, 0.5))
+    tool.onPointerDown(on(0.5, 0.5, 1), down(0.5, 0.5))
+    type(tool, text)
+  }
+
+  it('cuts a 3 mm pocket and fills it with a PLA Object, in one undo step', () => {
+    const { box, tool, onToast } = inlaySetup()
+    const before = objects(scene)
+    const depth = scene.undo_depth()
+    typed(tool, '-0.003')
+
+    expect(onToast).not.toHaveBeenCalled()
+    const after = objects(scene)
+    expect(after).toHaveLength(before.length + 1)
+    const inlay = after.find((o) => !before.includes(o))!
+    expect(materialNames(scene, box)).toEqual([PETG])
+    expect(materialNames(scene, inlay)).toEqual([PLA])
+    const filled = measure(scene, inlay)
+    expect(filled.volume).toBeCloseTo(0.5 * 0.5 * 0.003, 12)
+    expect(measure(scene, box).volume).toBeCloseTo(1 - filled.volume, 12)
+    expect(measure(scene, box).volume + filled.volume).toBeCloseTo(1, 12)
+    // The filling sits in the pocket: flush with the top, down to its floor.
+    expect(filled.bbox.max[2]).toBeCloseTo(1, 12)
+    expect(filled.bbox.min[2]).toBeCloseTo(0.997, 12)
+    expect(filled.bbox.min[0]).toBeCloseTo(0.25, 12)
+    expect(filled.bbox.max[0]).toBeCloseTo(0.75, 12)
+    expect(scene.undo_depth()).toBe(depth + 1)
+    const entries = JSON.parse(scene.history_entries_json()) as { undo: { label: string }[] }
+    expect(entries.undo[entries.undo.length - 1].label).toBe('Inlay')
+
+    scene.scene_undo().free()
+    expect(objects(scene)).toEqual(before)
+    expect(measure(scene, box).volume).toBeCloseTo(1, 12)
+    expect(inUse(scene, PLA)).toBe(false)
+
+    scene.scene_redo().free()
+    expect(objects(scene)).toEqual(after)
+    expect(materialNames(scene, box)).toEqual([PETG])
+    expect(materialNames(scene, inlay)).toEqual([PLA])
+    expect(measure(scene, box).volume + measure(scene, inlay).volume).toBeCloseTo(1, 12)
+  })
+
+  it('says "inlay" and names both filaments, while hovering, dragging in, and in the retype window', () => {
+    const { tool, preview } = inlaySetup()
+    tool.onPointerMove(on(0.5, 0.5, 1), down(0.5, 0.5))
+    expect(tool.statusHint()).toBe(`This face is ${PETG}: pushing it in inlays a new ${PLA} object, pulling it out makes one. Ctrl is on.`)
+    startDrag(tool, 0.5, 0.5, 1, 0.8)
+    expect(tool.statusHint()).toBe(
+      `Inlays ${PLA} into this ${PETG} face: cuts a pocket and fills it with a new ${PLA} object. Click to commit — or type an exact distance.`,
+    )
+    expect(ghostColours(preview)).toContain(PREVIEW_EXTRUDE_NEW_FALLBACK)
+    // Back out of the face: a new Object pulled out, as before.
+    tool.onPointerMove(on(0.5, 0.5, 1.3), { origin: [5.5, 0.5, 1.3], direction: [-1, 0, 0] })
+    expect(tool.statusHint()).not.toContain('Inlays')
+    tool.onPointerMove(on(0.5, 0.5, 0.8), { origin: [5.5, 0.5, 0.8], direction: [-1, 0, 0] })
+    type(tool, '0.003')
+    expect(tool.statusHint()).toContain(`redo the ${PLA} inlay in ${PETG}`)
+  })
+
+  it('a retyped distance redoes the inlay at that depth, and a flipped sign pulls a new Object out instead', () => {
+    const { box, tool } = inlaySetup()
+    const before = objects(scene)
+    typed(tool, '-0.003')
+    type(tool, '0.005')
+    let after = objects(scene)
+    expect(after).toHaveLength(before.length + 1)
+    let inlay = after.find((o) => !before.includes(o))!
+    expect(measure(scene, inlay).volume).toBeCloseTo(0.25 * 0.005, 12)
+    expect(measure(scene, box).volume).toBeCloseTo(1 - 0.25 * 0.005, 12)
+
+    type(tool, '-0.004')
+    after = objects(scene)
+    expect(after).toHaveLength(before.length + 1)
+    inlay = after.find((o) => !before.includes(o))!
+    expect(measure(scene, box).volume).toBeCloseTo(1, 12)
+    expect(measure(scene, inlay).bbox.min[2]).toBeCloseTo(1, 12)
+    expect(measure(scene, inlay).bbox.max[2]).toBeCloseTo(1.004, 12)
+  })
+
+  it('a refused half refuses the whole step: history and document unchanged', () => {
+    const { box, tool, onToast } = inlaySetup()
+    const before = objects(scene)
+    const depth = scene.undo_depth()
+    const history = scene.history_entries_json()
+    const hash = scene.state_hash()
+    vi.spyOn(scene, 'push_pull').mockImplementation(() => {
+      throw new Error('Obstructed: the push is blocked')
+    })
+    typed(tool, '-0.003')
+    expect(onToast).toHaveBeenCalledTimes(1)
+    expect(objects(scene)).toEqual(before)
+    expect(scene.undo_depth()).toBe(depth)
+    expect(scene.history_entries_json()).toBe(history)
+    expect(scene.state_hash()).toBe(hash)
+    expect(measure(scene, box).volume).toBeCloseTo(1, 12)
+  })
+
+  it('a push right through the part takes the filling through with it', () => {
+    const { tool, onToast } = inlaySetup()
+    const before = objects(scene)
+    typed(tool, '-1')
+    expect(onToast).not.toHaveBeenCalled()
+    const after = objects(scene)
+    const pla = after.filter((o) => materialNames(scene, o)[0] === PLA)
+    const petg = after.filter((o) => materialNames(scene, o)[0] === PETG)
+    expect(pla).toHaveLength(1)
+    expect(measure(scene, pla[0]).volume).toBeCloseTo(0.25, 12)
+    expect(measure(scene, pla[0]).bbox.min[2]).toBeCloseTo(0, 12)
+    const petgVolume = petg.reduce((v, o) => v + measure(scene, o).volume, 0)
+    expect(petgVolume).toBeCloseTo(0.75, 12)
+    scene.scene_undo().free()
+    expect(objects(scene)).toEqual(before)
+  })
+
+  it('not on a linked copy: the push would cut every copy, so Ctrl/Cmd + push stays a new Object and the set is untouched', () => {
+    const box = petgBoxWithRectangle()
+    const set = scene.wrap_linked(0, box)
+    const before = objects(scene)
+    const { tool, onToast } = harness(scene)
+    tool.setFaceEligibility((_o, instance) => instance === undefined || scene.is_linked(instance))
+    tool.toggleExtrudeAsNew()
+    tool.onPointerMove(on(0.5, 0.5, 1), down(0.5, 0.5))
+    expect(tool.statusHint()).not.toContain('inlay')
+    typed(tool, '-0.003')
+    expect(onToast).not.toHaveBeenCalled()
+    expect(objects(scene)).toHaveLength(before.length + 1)
+    expect(JSON.parse(scene.measure_json(2, set)).volume).toBeCloseTo(1, 12)
+  })
+
+  it('same filament: Ctrl/Cmd + push stays as upstream, a new Object overlapping the untouched box', () => {
+    const box = makeBox(scene)
+    drawOnTop(scene, box)
+    const before = objects(scene)
+    const { tool } = harness(scene)
+    tool.toggleExtrudeAsNew()
+    typed(tool, '-0.003')
+    expect(objects(scene)).toHaveLength(before.length + 1)
+    expect(measure(scene, box).volume).toBeCloseTo(1, 12)
+  })
+})
+
+describe('reopening a document with a linked set', () => {
+  it('keeps a PETG linked set PETG while PLA is selected', () => {
+    const box = makeBox(scene)
+    const set = scene.wrap_linked(0, box)
+    // A second copy, placed as a linked paste places one: with the set's own material.
+    const copy = scene.place_instance(scene.instance_def(set)!, Float64Array.of(1, 0, 0, 3, 0, 1, 0, 0, 0, 0, 1, 0))
+    scene.set_instance_material(copy, scene.instance_appearance_material(set))
+    const saved = new Uint8Array(scene.save())
+
+    selectFilament(PLA)
+    const reopened = withBuildFilament(new Scene() as unknown as WasmScene)
+    reopened.load(saved)
+    const depth = reopened.undo_depth()
+    flattenDocument(reopened)
+    const placements = Array.from(reopened.instance_ids())
+    expect(placements.length).toBeGreaterThan(0)
+    for (const instance of placements) {
+      const def = reopened.instance_def(instance)!
+      for (const member of Array.from(reopened.component_member_objects(def))) {
+        expect(filamentDifference(reopened, member, { instance })).toEqual({ object: PETG, selected: PLA })
+      }
+    }
+    expect(reopened.undo_depth()).toBe(depth)
+    expect(inUse(reopened, PLA)).toBe(false)
+  })
+
+  it('still gives a document from before filaments the selected filament', () => {
+    resetFilamentsForTest([], null)
+    makeBox(scene)
+    const saved = new Uint8Array(scene.save())
+    resetFilamentsForTest(GENERIC_FILAMENTS, PLA)
+    const reopened = withBuildFilament(new Scene() as unknown as WasmScene)
+    reopened.load(saved)
+    flattenDocument(reopened)
+    const [only] = Array.from(reopened.object_ids())
+    expect(materialNames(reopened, only)).toEqual([PLA])
   })
 })

@@ -39,6 +39,7 @@ import { ctxOfFace, ctxOfSketch, readPlaneUnits, type PlaneUnitsScene } from './
 import { pickPolicyGeneration, pickRenderMode } from './pickPolicy'
 import { regionUnderRay } from './regionPick'
 import { filamentDifference, type FilamentDifference } from '../borpa/objectFilament'
+import { inHistoryBracket } from './transformSelection'
 
 /** Snap kinds whose point is a deliberate depth reference for push/pull — the
  * cursor was parked on a real feature. `on-face` is excluded on purpose: it
@@ -263,12 +264,20 @@ export class PushPullTool implements Tool {
       // status bar and (`hoverHint`) beside the cursor.
       if (this._hoverRefusal !== null) return this._hoverRefusal
       const hovered = this._hoverTarget
-      const foreign = hovered?.kind === 'face' && !this._makesNewObject() ? filamentDifference(this.wasmScene, hovered.object, { face: hovered.face, instance: hovered.instance }) : null
+      const foreign = hovered?.kind === 'face' && !hovered.locked && !(this._makesNewObject() && hovered.instance !== null) ? filamentDifference(this.wasmScene, hovered.object, { face: hovered.face, instance: hovered.instance }) : null
       if (foreign !== null) {
         const { object: faceFilament, selected } = foreign
+        if (this._makesNewObject()) {
+          return t`This face is ${faceFilament}: pushing it in inlays a new ${selected} object, pulling it out makes one. Ctrl is on.`
+        }
         return this._activeComponent === null
           ? t`This face is ${faceFilament}: pulling it out makes a new ${selected} object, pushing it in cuts it.`
           : t`This face is ${faceFilament}: pushing it in cuts it, but it can't be pulled out in ${selected} here.`
+      }
+      const inlaid = this.retype.isOpen ? this._inlayOf(this.retype.spec) : null
+      if (inlaid !== null) {
+        const { object: faceFilament, selected } = inlaid
+        return t`Type an exact distance to redo the ${selected} inlay in ${faceFilament} you just made — or click another face; double-click repeats the last distance.`
       }
       if (this.retype.isOpen) {
         return t`Type an exact distance to redo the push/pull you just made — or click another face; double-click repeats the last distance.`
@@ -279,6 +288,11 @@ export class PushPullTool implements Tool {
     }
     if (this._latchedNewObject()) {
       return t`This face is locked, so this makes a NEW object. Move to extrude, click to commit — or type an exact distance.`
+    }
+    const inlay = this.stage.kind === 'dragging' ? this._inlays(this.stage.target, this.stage.distance) : null
+    if (inlay !== null) {
+      const { object: faceFilament, selected } = inlay
+      return t`Inlays ${selected} into this ${faceFilament} face: cuts a pocket and fills it with a new ${selected} object. Click to commit — or type an exact distance.`
     }
     const pulled = this._pullsOutOfOtherFilament()
     if (pulled !== null) {
@@ -564,6 +578,34 @@ export class PushPullTool implements Tool {
     const difference = filamentDifference(this.wasmScene, target.objectHandle, { face: target.faceHandle, instance: target.instance })
     if (difference === null) return null
     return distance > 0 || this._isFlatSheetNow(target.objectHandle) ? difference : null
+  }
+
+  /**
+   * Borpa: a commit at `distance` is an inlay. With Ctrl/Cmd on, pushing INTO
+   * a face of another filament cuts the pocket a plain push would and fills
+   * it with a new Object in the selected filament (`_commitInlay`). Not for a
+   * locked face (it cannot be cut), a lone flat sheet (nothing to cut), inside
+   * a component (no new Object can be made there), or a face reached through
+   * a placement: the push would cut the shared shape of every copy, the
+   * filling only one of them.
+   */
+  private _inlays(target: PushPullTarget, distance: number): FilamentDifference | null {
+    if (target.kind !== 'face' || target.instance !== null || !(distance < 0) || !this._makesNewObject() || target.newObjectOnly === true) return null
+    const difference = filamentDifference(this.wasmScene, target.objectHandle, { face: target.faceHandle, instance: target.instance })
+    if (difference === null || this._isFlatSheetNow(target.objectHandle)) return null
+    return difference
+  }
+
+  /** The inlay a retype window's push/pull made, or null. */
+  private _inlayOf(spec: RetypeSpec | null): FilamentDifference | null {
+    if (spec === null || !spec.extrudeAsNew) return null
+    const prev = this.extrudeAsNewMode
+    this.extrudeAsNewMode = true
+    try {
+      return this._inlays(spec.target, spec.distance)
+    } finally {
+      this.extrudeAsNewMode = prev
+    }
   }
 
   /** `_addsToOtherFilament` for the drag in progress, unless the Ctrl mode or
@@ -1352,6 +1394,24 @@ export class PushPullTool implements Tool {
     }
   }
 
+  /**
+   * The inlay, as ONE undo step: the face is extruded inward into a new
+   * Object (the selected filament, borpa/filamentScene.ts), then pushed in by
+   * the same distance, so the Object gets the pocket a plain push would cut
+   * and the new one fills it exactly. Extruding as new leaves the source
+   * untouched, so the face handle still names the face for the push. A push
+   * that goes through the part takes the filling through with it. Either half
+   * refused aborts the step and leaves the document as it was. Returns the
+   * new Object.
+   */
+  private _commitInlay(target: Extract<PushPullTarget, { kind: 'face' }>, distance: number): bigint {
+    return inHistoryBracket(this.wasmScene, t`Inlay`, () => {
+      const inlay = this.wasmScene.extrude_face_as_new_object(target.objectHandle, target.faceHandle, distance)
+      this.wasmScene.push_pull(target.objectHandle, target.faceHandle, distance).free()
+      return inlay
+    })
+  }
+
   /** True when the kernel accepted the commit (false = refused, toasted). */
   private _commit(target: PushPullTarget, distance: number): boolean {
     if (Math.abs(distance) < 1e-6) {
@@ -1377,6 +1437,8 @@ export class PushPullTool implements Tool {
               distance,
             )
         this.onCommit(objectId)
+      } else if (target.kind === 'face' && this._inlays(target, distance) !== null) {
+        this.onCommit(this._commitInlay(target, distance))
       } else if (
         this._makesNewObject() ||
         target.newObjectOnly === true ||
