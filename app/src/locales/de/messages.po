@@ -5411,6 +5411,14 @@ msgstr "unabhängige Kopien"
 msgid "Independent copy"
 msgstr "Unabhängige Kopie"
 
+#: src/tools/PushPullTool.ts
+msgid "Inlay"
+msgstr ""
+
+#: src/tools/PushPullTool.ts
+msgid "Inlays {selected} into this {faceFilament} face: cuts a pocket and fills it with a new {selected} object. Click to commit — or type an exact distance."
+msgstr ""
+
 #: src/palette/registry.ts
 msgid "insert"
 msgstr "einfügen"
@@ -11400,6 +11408,10 @@ msgstr ""
 msgid "This face is {faceFilament}: pushing it in cuts it, but it can't be pulled out in {selected} here."
 msgstr ""
 
+#: src/tools/PushPullTool.ts
+msgid "This face is {faceFilament}: pushing it in inlays a new {selected} object, pulling it out makes one. Ctrl is on."
+msgstr ""
+
 #: src/borpa/filamentRules.ts
 msgid "This face is {o}, so it can't be pulled out in {s} here. Push it in to cut, select {o}, or pull it out outside the component to make a new {s} object."
 msgstr ""
@@ -12047,6 +12059,10 @@ msgstr "Geben Sie einen genauen Winkel ein, um die gerade ausgeführte Drehung n
 #: src/tools/ArcTool.ts
 msgid "Type an exact bulge to redraw the arc you just drew — or click the first point of the next one."
 msgstr "Geben Sie eine genaue Wölbung ein, um den gerade gezeichneten Bogen neu zu zeichnen – oder klicken Sie auf den ersten Punkt des nächsten."
+
+#: src/tools/PushPullTool.ts
+msgid "Type an exact distance to redo the {selected} inlay in {faceFilament} you just made — or click another face; double-click repeats the last distance."
+msgstr ""
 
 #: src/tools/MoveTool.ts
 msgid "Type an exact distance to redo the copy you just made, 3x to add copies, 3/ to divide it, or 4x,3x for a grid — Enter applies."
