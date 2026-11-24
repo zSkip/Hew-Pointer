@@ -65,7 +65,7 @@ describe('default bindings', () => {
     expect(b['tool-rotate']).toEqual(['Q', '5'])
     expect(b['tool-scale']).toEqual(['S', '6'])
     expect(b['tool-tape-measure']).toEqual(['T'])
-    expect(b['tool-paint']).toEqual(['B'])
+    expect(b['tool-paint']).toBeUndefined()
     expect(b['tool-orbit']).toEqual(['O'])
     expect(b['tool-pan']).toEqual(['H'])
     expect(b['tool-zoom']).toEqual(['Z'])

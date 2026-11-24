@@ -268,7 +268,7 @@ describe('native menu parity — Tools and Object menu organization', () => {
 
   it('Tools menu: SketchUp order, with Shape and Deform as submenus', () => {
     expect(chainOf('tools_menu')).toEqual([
-      'tool_select', 'tool_eraser', 'tool_paint', 'tool_position_texture', '-',
+      'tool_select', 'tool_eraser', '-',
       'tool_move', 'tool_rotate', 'tool_scale', 'tool_flip', '-',
       'tool_pushpull', 'tool_follow_me', 'tool_offset', 'tool_fillet', 'tool_chamfer', '-',
       'shape_menu', 'deform_menu', '-',

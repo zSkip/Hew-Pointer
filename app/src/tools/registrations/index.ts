@@ -6,8 +6,8 @@
  * Tools NOT in the table are still built by `Viewport.tsx` itself because
  * each is tied to Viewport-internal machinery a `ToolContext` would have to
  * mirror wholesale (listed in `registrations.test.ts` as
- * `NOT_REGISTERED`): the transform tools and the drag-to-move handoff, Paint,
- * Position Texture, the measuring and annotating tools, and the camera tools.
+ * `NOT_REGISTERED`): the transform tools and the drag-to-move handoff, the
+ * measuring and annotating tools, and the camera tools.
  */
 
 import { toolAllowed } from '../../preview'

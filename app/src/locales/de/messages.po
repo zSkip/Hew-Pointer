@@ -35,8 +35,8 @@ msgid "· red"
 msgstr "· rot"
 
 #: src/App.tsx
-msgid "\"{matDeleteName}\" — used on {matDeleteUsage, plural, one {# face} other {# faces}} — delete and unpaint them?"
-msgstr "„{matDeleteName}“ – verwendet auf {matDeleteUsage, plural, one {# Fläche} other {# Flächen}} – löschen und Farbe entfernen?"
+#~ msgid "\"{matDeleteName}\" — used on {matDeleteUsage, plural, one {# face} other {# faces}} — delete and unpaint them?"
+#~ msgstr "„{matDeleteName}“ – verwendet auf {matDeleteUsage, plural, one {# Fläche} other {# Flächen}} – löschen und Farbe entfernen?"
 
 #: src/library/libraryUpdates.ts
 msgid "“{name}” is locked and was not updated. Unlock it first."
@@ -1094,12 +1094,12 @@ msgid "↑ ↓ navigate · ↵ run · esc close"
 msgstr "↑ ↓ navigieren · ↵ ausführen · Esc schließen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "+ Add color"
-msgstr "+ Farbe hinzufügen"
+#~ msgid "+ Add color"
+#~ msgstr "+ Farbe hinzufügen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "+ Add texture"
-msgstr "+ Textur hinzufügen"
+#~ msgid "+ Add texture"
+#~ msgstr "+ Textur hinzufügen"
 
 #: src/panels/library/LibraryDetailPane.tsx
 msgid "+ keyword"
@@ -1399,8 +1399,8 @@ msgid "Add a shortcut to {label}"
 msgstr "Tastenkürzel zu {label} hinzufügen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Add color"
-msgstr "Farbe hinzufügen"
+#~ msgid "Add color"
+#~ msgstr "Farbe hinzufügen"
 
 #: src/i18n/nativeMenu.ts
 #: src/palette/registry.ts
@@ -1426,8 +1426,8 @@ msgid "Add tag to all selected"
 msgstr "Tag zu allen ausgewählten hinzufügen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Add texture"
-msgstr "Textur hinzufügen"
+#~ msgid "Add texture"
+#~ msgstr "Textur hinzufügen"
 
 #: src/health/healthCopy.ts
 #: src/i18n/historyLabels.ts
@@ -1648,6 +1648,10 @@ msgstr "Wie angezeigt"
 msgid "Ask again…"
 msgstr "Erneut fragen …"
 
+#: src/borpa/filamentScene.ts
+msgid "Assign filament"
+msgstr ""
+
 #: src/settings/ViewPane.tsx
 msgid "At the cursor"
 msgstr "Am Cursor"
@@ -1853,6 +1857,10 @@ msgstr "Browserspeicher"
 msgid "bug"
 msgstr "Fehler"
 
+#: src/panels/FilamentSidebar.tsx
+msgid "Build in {name}"
+msgstr ""
+
 #: src/panels/ImportingOverlay.tsx
 msgid "Building objects: {done} of {total}"
 msgstr "Objekte werden erstellt: {done} von {total}"
@@ -2050,25 +2058,29 @@ msgstr "Prüft, ob unter der Adresse ein Hew-Relay läuft und – falls erforder
 msgid "Checks that the Hew cloud relay is reachable from this computer."
 msgstr "Prüft, ob das Hew-Cloud-Relay von diesem Computer aus erreichbar ist."
 
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Choose a filament…"
+msgstr ""
+
 #: src/panels/SentReportsDialog.tsx
 msgid "Choose a file to attach"
 msgstr "Datei zum Anhängen auswählen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Choose an image file first."
-msgstr "Wählen Sie zuerst eine Bilddatei."
+#~ msgid "Choose an image file first."
+#~ msgstr "Wählen Sie zuerst eine Bilddatei."
 
 #: src/health/healthCopy.ts
 msgid "Choose at least one step."
 msgstr "Wählen Sie mindestens einen Schritt."
 
 #: src/panels/MaterialPalette.tsx
-msgid "Choose color"
-msgstr "Farbe wählen"
+#~ msgid "Choose color"
+#~ msgstr "Farbe wählen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Choose color…"
-msgstr "Farbe wählen …"
+#~ msgid "Choose color…"
+#~ msgstr "Farbe wählen …"
 
 #: src/health/healthCopy.ts
 msgid "Choose for each item"
@@ -2111,7 +2123,6 @@ msgstr "Leeren"
 
 #: src/panels/ComponentsPanel.tsx
 #: src/panels/DocumentTree.tsx
-#: src/panels/MaterialPalette.tsx
 #: src/panels/TagsPanel.tsx
 msgid "Clear filter"
 msgstr "Filter zurücksetzen"
@@ -3122,14 +3133,13 @@ msgstr "Dezimalzoll"
 msgid "Decimal inches (60.125\")"
 msgstr "Dezimalzoll (60.125\")"
 
-#: src/panels/MaterialPalette.tsx
 #: src/panels/ScenesPanel.tsx
 msgid "Default"
 msgstr "Standard"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Default (unpainted)"
-msgstr "Standard (nicht eingefärbt)"
+#~ msgid "Default (unpainted)"
+#~ msgstr "Standard (nicht eingefärbt)"
 
 #: src/panels/ObjectInfoPanel.tsx
 msgid "Definition Name"
@@ -3269,16 +3279,16 @@ msgid "Delete material"
 msgstr "Material löschen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Delete material {name}"
-msgstr "Material {name} löschen"
+#~ msgid "Delete material {name}"
+#~ msgstr "Material {name} löschen"
 
 #: src/App.tsx
-msgid "Delete material failed: {reason}"
-msgstr "Material löschen fehlgeschlagen: {reason}"
+#~ msgid "Delete material failed: {reason}"
+#~ msgstr "Material löschen fehlgeschlagen: {reason}"
 
 #: src/App.tsx
-msgid "Delete material?"
-msgstr "Material löschen?"
+#~ msgid "Delete material?"
+#~ msgstr "Material löschen?"
 
 #: src/i18n/historyLabels.ts
 msgid "Delete object"
@@ -3321,8 +3331,8 @@ msgid "Deleted component \"{name}\"."
 msgstr "Komponente „{name}“ gelöscht."
 
 #: src/App.tsx
-msgid "Deleted material \"{name}\"."
-msgstr "Material „{name}“ gelöscht."
+#~ msgid "Deleted material \"{name}\"."
+#~ msgstr "Material „{name}“ gelöscht."
 
 #: src/scenes/scenesModel.ts
 msgid "Deleting a Scene can't be undone."
@@ -4083,6 +4093,21 @@ msgstr "Rückmeldung"
 msgid "Field of View"
 msgstr "Sichtfeld"
 
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Filament"
+msgstr ""
+
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Filament for the selection"
+msgstr ""
+
+#: src/App.tsx
+#: src/i18n/nativeMenu.ts
+#: src/panels/FilamentSidebar.tsx
+#: src/panels/MenuBar.tsx
+msgid "Filaments"
+msgstr ""
+
 #: src/i18n/nativeMenu.ts
 #: src/panels/MenuBar.tsx
 msgid "File"
@@ -4138,12 +4163,12 @@ msgid "Filter fonts…"
 msgstr "Schriften filtern …"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Filter materials"
-msgstr "Materialien filtern"
+#~ msgid "Filter materials"
+#~ msgstr "Materialien filtern"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Filter materials…"
-msgstr "Materialien filtern …"
+#~ msgid "Filter materials…"
+#~ msgstr "Materialien filtern …"
 
 #: src/panels/DocumentTree.tsx
 msgid "Filter outliner"
@@ -4614,8 +4639,8 @@ msgstr "H"
 
 #. Abbreviation for height, label beside the texture height field
 #: src/panels/MaterialPalette.tsx
-msgid "H:"
-msgstr "H:"
+#~ msgid "H:"
+#~ msgstr "H:"
 
 #: src/panels/PhoneShareDialog.tsx
 msgid "Handoff URL"
@@ -5198,6 +5223,10 @@ msgstr "Im Browser kommuniziert Hew mit dem Server, von dem es geladen wurde –
 msgid "In the browser, Hew talks to the server it was loaded from — there is nothing to configure here. The desktop app can be pointed at a self-hosted server under Settings ▸ Advanced."
 msgstr "Im Browser kommuniziert Hew mit dem Server, von dem es geladen wurde – hier gibt es nichts einzustellen. Die Desktop-App kann unter Einstellungen ▸ Erweitert auf einen selbst gehosteten Server verwiesen werden."
 
+#: src/panels/FilamentSidebar.tsx
+msgid "In the selection"
+msgstr ""
+
 #: src/panels/library/LibraryDetailPane.tsx
 #: src/panels/LibraryDialog.tsx
 msgid "In this model"
@@ -5655,6 +5684,10 @@ msgstr "Bibliothekselemente in {categoryName}"
 msgid "Library material"
 msgstr "Bibliotheksmaterial"
 
+#: src/App.tsx
+msgid "Library materials are not used here: an Object is made of the filament chosen in the Filaments pane."
+msgstr ""
+
 #: src/io/documentSession.ts
 msgid "Library metadata"
 msgstr "Bibliotheks-Metadaten"
@@ -6033,11 +6066,7 @@ msgstr "Material"
 msgid "materials"
 msgstr "Materialien"
 
-#: src/App.tsx
-#: src/i18n/nativeMenu.ts
 #: src/panels/LibraryDialog.tsx
-#: src/panels/MenuBar.tsx
-#: src/panels/ObjectInfoPanel.tsx
 msgid "Materials"
 msgstr "Materialien"
 
@@ -6163,20 +6192,20 @@ msgid "Merging those points would fold faces onto each other. Turn on Separate p
 msgstr "Das Zusammenführen dieser Punkte würde Flächen aufeinanderfalten. Schalten Sie zusätzlich „Teile trennen, die sich in einem Punkt berühren“ ein."
 
 #: src/panels/MaterialPalette.tsx
-msgid "Metallic"
-msgstr "Metallisch"
+#~ msgid "Metallic"
+#~ msgstr "Metallisch"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Metallic (select a material swatch first)"
-msgstr "Metallisch (zuerst ein Materialmuster auswählen)"
+#~ msgid "Metallic (select a material swatch first)"
+#~ msgstr "Metallisch (zuerst ein Materialmuster auswählen)"
 
 #: src/kernelErrors.ts
 msgid "Metallic and roughness must each be between 0 and 100%."
 msgstr "Metallisch und Rauheit müssen jeweils zwischen 0 und 100 % liegen."
 
 #: src/panels/MaterialPalette.tsx
-msgid "Metallic for {selectedName}"
-msgstr "Metallisch für {selectedName}"
+#~ msgid "Metallic for {selectedName}"
+#~ msgstr "Metallisch für {selectedName}"
 
 #: src/settings/stlImportUnit.ts
 #: src/settings/units.ts
@@ -6461,8 +6490,8 @@ msgstr "Name"
 #~ msgstr "Name (alle Kopien)"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Name…"
-msgstr "Name …"
+#~ msgid "Name…"
+#~ msgstr "Name …"
 
 #: src/palette/registry.ts
 msgid "named view"
@@ -6525,6 +6554,10 @@ msgstr "Name der neuen Sammlung"
 #: src/panels/library/LibraryDetailPane.tsx
 msgid "New collection path"
 msgstr "Pfad der neuen Sammlung"
+
+#: src/panels/FilamentSidebar.tsx
+msgid "New geometry is built in {name}"
+msgstr ""
 
 #: src/panels/library/LibraryDetailPane.tsx
 msgid "New keyword"
@@ -6594,6 +6627,14 @@ msgstr "Keine entarteten Flächen gefunden."
 msgid "No document."
 msgstr "Kein Dokument."
 
+#: src/panels/FilamentSidebar.tsx
+msgid "No filament matches."
+msgstr ""
+
+#: src/panels/FilamentSidebar.tsx
+msgid "No filaments yet. Choose a printer in Borpa to list its filaments."
+msgstr ""
+
 #: src/log/reportBundle.ts
 msgid "no file failed to open"
 msgstr "keine Datei mit Öffnungsfehler"
@@ -6640,8 +6681,8 @@ msgid "No materials here yet."
 msgstr "Hier gibt es noch keine Materialien."
 
 #: src/panels/MaterialPalette.tsx
-msgid "No materials match"
-msgstr "Keine passenden Materialien"
+#~ msgid "No materials match"
+#~ msgstr "Keine passenden Materialien"
 
 #: src/panels/SentReportsDialog.tsx
 msgid "No messages yet."
@@ -7121,24 +7162,24 @@ msgid "Only this one"
 msgstr "Nur diese"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity"
-msgstr "Deckkraft"
+#~ msgid "Opacity"
+#~ msgstr "Deckkraft"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity — {selectedName}"
-msgstr "Deckkraft – {selectedName}"
+#~ msgid "Opacity — {selectedName}"
+#~ msgstr "Deckkraft – {selectedName}"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity (select a material swatch first)"
-msgstr "Deckkraft (zuerst ein Materialmuster auswählen)"
+#~ msgid "Opacity (select a material swatch first)"
+#~ msgstr "Deckkraft (zuerst ein Materialmuster auswählen)"
 
 #: src/library/libraryModel.ts
 msgid "opacity {percent}%"
 msgstr "Deckkraft {percent} %"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Opacity for {selectedName}"
-msgstr "Deckkraft für {selectedName}"
+#~ msgid "Opacity for {selectedName}"
+#~ msgstr "Deckkraft für {selectedName}"
 
 #: src/panels/LibraryDialog.tsx
 #: src/panels/SentReportsDialog.tsx
@@ -7419,10 +7460,9 @@ msgid "Paint"
 msgstr "Einfärben"
 
 #: src/i18n/nativeMenu.ts
-#: src/tools/toolRegistry.ts
-msgctxt "tool"
-msgid "Paint"
-msgstr "Farbeimer"
+#~ msgctxt "tool"
+#~ msgid "Paint"
+#~ msgstr "Farbeimer"
 
 #: src/i18n/historyLabels.ts
 msgid "Paint face"
@@ -7781,9 +7821,8 @@ msgid "Position texture"
 msgstr "Textur positionieren"
 
 #: src/i18n/nativeMenu.ts
-#: src/tools/toolRegistry.ts
-msgid "Position Texture"
-msgstr "Textur positionieren"
+#~ msgid "Position Texture"
+#~ msgstr "Textur positionieren"
 
 #: src/tools/PositionTextureTool.ts
 msgid "Position Texture ended — the model changed since positioning started"
@@ -8354,8 +8393,8 @@ msgid "Rename material"
 msgstr "Material umbenennen"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Rename material {name}"
-msgstr "Material {name} umbenennen"
+#~ msgid "Rename material {name}"
+#~ msgstr "Material {name} umbenennen"
 
 #: src/i18n/historyLabels.ts
 msgid "Rename tag"
@@ -8650,16 +8689,16 @@ msgid "Rotate the selection around an inferred axis."
 msgstr "Die Auswahl um eine abgeleitete Achse drehen."
 
 #: src/panels/MaterialPalette.tsx
-msgid "Roughness"
-msgstr "Rauheit"
+#~ msgid "Roughness"
+#~ msgstr "Rauheit"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Roughness (select a material swatch first)"
-msgstr "Rauheit (zuerst ein Materialmuster auswählen)"
+#~ msgid "Roughness (select a material swatch first)"
+#~ msgstr "Rauheit (zuerst ein Materialmuster auswählen)"
 
 #: src/panels/MaterialPalette.tsx
-msgid "Roughness for {selectedName}"
-msgstr "Rauheit für {selectedName}"
+#~ msgid "Roughness for {selectedName}"
+#~ msgstr "Rauheit für {selectedName}"
 
 #: src/palette/registry.ts
 msgid "round"
@@ -8829,7 +8868,6 @@ msgid "Save to file…"
 msgstr "In Datei speichern …"
 
 #: src/panels/dockLogic.ts
-#: src/panels/MaterialPalette.tsx
 #: src/panels/SaveToLibraryPopover.tsx
 msgid "Save to Library"
 msgstr "In Bibliothek speichern"
@@ -8857,8 +8895,8 @@ msgid "Saved \"{name}\" to library"
 msgstr "„{name}“ in der Bibliothek gespeichert"
 
 #: src/App.tsx
-msgid "Saved \"{name}\" to library."
-msgstr "„{name}“ in der Bibliothek gespeichert."
+#~ msgid "Saved \"{name}\" to library."
+#~ msgstr "„{name}“ in der Bibliothek gespeichert."
 
 #: src/library/libraryModel.ts
 msgid "Saved {date}"
@@ -9035,6 +9073,10 @@ msgstr "Befehle durchsuchen …"
 msgid "Search every tool and action."
 msgstr "Alle Werkzeuge und Aktionen durchsuchen."
 
+#: src/panels/FilamentSidebar.tsx
+msgid "Search filaments"
+msgstr ""
+
 #: src/panels/LibraryDialog.tsx
 msgid "Search name or keyword…"
 msgstr "Name oder Stichwort suchen …"
@@ -9122,8 +9164,8 @@ msgid "Select a drawn open line or arc first, then save it as a profile."
 msgstr "Wählen Sie zuerst eine gezeichnete offene Linie oder einen Bogen aus und speichern Sie sie dann als Profil."
 
 #: src/panels/MaterialPalette.tsx
-msgid "Select a material swatch to adjust its opacity"
-msgstr "Wählen Sie ein Materialmuster aus, um seine Deckkraft anzupassen"
+#~ msgid "Select a material swatch to adjust its opacity"
+#~ msgstr "Wählen Sie ein Materialmuster aus, um seine Deckkraft anzupassen"
 
 #: src/tools/PositionTextureTool.ts
 msgid "Select a textured face to position its texture"
@@ -9424,6 +9466,10 @@ msgstr "Alles anzeigen"
 msgid "Show in Explorer"
 msgstr "Im Explorer zeigen"
 
+#: src/panels/ObjectInfoPanel.tsx
+msgid "Show in Filaments pane"
+msgstr ""
+
 #: src/panels/library/LibraryMenu.tsx
 msgid "Show in file manager"
 msgstr "Im Dateimanager zeigen"
@@ -9441,8 +9487,8 @@ msgid "Show in list"
 msgstr "In der Liste zeigen"
 
 #: src/panels/ObjectInfoPanel.tsx
-msgid "Show in Materials pane"
-msgstr "Im Materialbereich zeigen"
+#~ msgid "Show in Materials pane"
+#~ msgstr "Im Materialbereich zeigen"
 
 #: src/panels/ObjectInfoPanel.tsx
 msgid "Show in Tags pane"
@@ -9481,6 +9527,10 @@ msgid "Show or hide the debug log panel."
 msgstr "Den Debug-Protokollbereich ein- oder ausblenden."
 
 #: src/palette/registry.ts
+msgid "Show or hide the Filaments panel."
+msgstr ""
+
+#: src/palette/registry.ts
 msgid "Show or hide the floating action dock at the bottom of the viewport."
 msgstr "Die schwebende Aktionsleiste unten im Ansichtsbereich ein- oder ausblenden."
 
@@ -9489,8 +9539,8 @@ msgid "Show or hide the ground grid."
 msgstr "Das Bodenraster ein- oder ausblenden."
 
 #: src/palette/registry.ts
-msgid "Show or hide the Materials panel."
-msgstr "Den Materialbereich ein- oder ausblenden."
+#~ msgid "Show or hide the Materials panel."
+#~ msgstr "Den Materialbereich ein- oder ausblenden."
 
 #: src/palette/registry.ts
 msgid "Show or hide the Model Info panel."
@@ -9667,6 +9717,10 @@ msgstr "Slicer"
 #: src/palette/registry.ts
 msgid "Slide the camera parallel to the view plane."
 msgstr "Die Kamera parallel zur Ansichtsebene verschieben."
+
+#: src/panels/FilamentSidebar.tsx
+msgid "Slot {slot}"
+msgstr ""
 
 #: src/settings/view.ts
 #: src/settings/ViewPane.tsx
@@ -10690,6 +10744,10 @@ msgstr "Die Auswahl konnte nicht mit einem verbundenen Programm geteilt werden. 
 msgid "The selection has nothing visible to transform — everything in it is hidden or empty. Unhide its contents, or select something visible."
 msgstr "Die Auswahl hat nichts Sichtbares zum Transformieren – alles darin ist ausgeblendet oder leer. Blenden Sie den Inhalt ein oder wählen Sie etwas Sichtbares aus."
 
+#: src/panels/FilamentSidebar.tsx
+msgid "The selection is made of this"
+msgstr ""
+
 #: src/panels/PhoneShareDialog.tsx
 msgid "The server rejected the upload key — check Settings ▸ Advanced."
 msgstr "Der Server hat den Upload-Schlüssel abgelehnt – prüfen Sie Einstellungen ▸ Erweitert."
@@ -11333,6 +11391,10 @@ msgid "Toggle Debug Log"
 msgstr "Debug-Protokoll umschalten"
 
 #: src/palette/registry.ts
+msgid "Toggle Filaments"
+msgstr ""
+
+#: src/palette/registry.ts
 msgid "Toggle Grid"
 msgstr "Raster umschalten"
 
@@ -11341,8 +11403,8 @@ msgid "Toggle Guides"
 msgstr "Hilfslinien umschalten"
 
 #: src/palette/registry.ts
-msgid "Toggle Materials"
-msgstr "Materialien umschalten"
+#~ msgid "Toggle Materials"
+#~ msgstr "Materialien umschalten"
 
 #: src/palette/registry.ts
 msgid "Toggle Model Info"
@@ -11941,6 +12003,10 @@ msgstr "USDZ (.usdz)"
 msgid "Use"
 msgstr "Verwenden"
 
+#: src/panels/FilamentSidebar.tsx
+msgid "Use {currentName} for selection"
+msgstr ""
+
 #: src/kernelErrorCopy/blend.ts
 msgid "Use between 2 and 96 segments."
 msgstr "Verwenden Sie zwischen 2 und 96 Segmente."
@@ -12046,8 +12112,8 @@ msgstr "W S vor/zurück · A D seitwärts · E Q hoch/runter · Mausrad Tempo ·
 
 #. Abbreviation for width, label beside the texture width field
 #: src/panels/MaterialPalette.tsx
-msgid "W:"
-msgstr "B:"
+#~ msgid "W:"
+#~ msgstr "B:"
 
 #: src/i18n/nativeMenu.ts
 msgid "Walk"
@@ -12182,8 +12248,8 @@ msgid "Working…"
 msgstr "Wird bearbeitet …"
 
 #: src/panels/MaterialPalette.tsx
-msgid "World size must be positive numbers."
-msgstr "Die reale Größe muss aus positiven Zahlen bestehen."
+#~ msgid "World size must be positive numbers."
+#~ msgstr "Die reale Größe muss aus positiven Zahlen bestehen."
 
 #: src/palette/curveEntries.ts
 msgid "wrap"

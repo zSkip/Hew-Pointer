@@ -281,7 +281,7 @@ function actionEntries(): PaletteEntry[] {
     { id: 'toggle-dock', label: t`Toggle Contextual Dock`, description: t`Show or hide the floating action dock at the bottom of the viewport.`, group: 'Actions', synonyms: [t`dock`, t`action bar`, t`floating toolbar`, t`hide dock`, t`show dock`] },
     { id: 'toggle-compact-rail', label: t`Compact Tool Rail`, description: t`Shrink the tool rail to icons only, or bring the tool names back.`, group: 'Actions', synonyms: [t`tool rail`, t`toolbar`, t`icons only`, t`tool names`, t`collapse`, t`expand`, t`sidebar`] },
     { id: 'toggle-model-info', label: t`Toggle Model Info`, description: t`Show or hide the Model Info panel.`, group: 'Actions' },
-    { id: 'toggle-materials', label: t`Toggle Materials`, description: t`Show or hide the Materials panel.`, group: 'Actions' },
+    { id: 'toggle-materials', label: t`Toggle Filaments`, description: t`Show or hide the Filaments panel.`, group: 'Actions' },
     { id: 'toggle-components', label: t`Toggle Components`, description: t`Show or hide the Components panel.`, group: 'Actions' },
     { id: 'toggle-tags', label: t`Toggle Tags`, description: t`Show or hide the Tags panel.`, group: 'Actions' },
     { id: 'toggle-scenes', label: t`Toggle Scenes`, description: t`Show or hide the Scenes panel.`, group: 'Actions' },

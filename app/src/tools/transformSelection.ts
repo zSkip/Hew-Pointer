@@ -315,19 +315,20 @@ const bracketed = new WeakSet<object>()
  * Run `body` as ONE undo step: every edit it records lands as a single
  * history entry labeled `label`, and ANY throw restores the document exactly
  * as it was (geometry, undo and redo stacks) before rethrowing — no
- * hand-written retraction. `needed = false` runs `body` bare, for a gesture
+ * hand-written retraction. A function `label` is read at the commit, after
+ * `body` ran. `needed = false` runs `body` bare, for a gesture
  * already known to record at most one atomic entry (the bracket snapshots the
  * document, so it is skipped when it cannot matter). A nested call joins the
  * enclosing bracket. The bracket is never left open.
  */
-export function inHistoryBracket<T>(wasmScene: WasmScene, label: string, body: () => T, needed = true): T {
+export function inHistoryBracket<T>(wasmScene: WasmScene, label: string | (() => string), body: () => T, needed = true): T {
   if (!needed || bracketed.has(wasmScene)) return body()
   wasmScene.history_bracket_open()
   bracketed.add(wasmScene)
   let committed = false
   try {
     const result = body()
-    wasmScene.history_bracket_commit(label)
+    wasmScene.history_bracket_commit(typeof label === 'function' ? label() : label)
     committed = true
     return result
   } finally {

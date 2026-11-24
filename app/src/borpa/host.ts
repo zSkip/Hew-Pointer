@@ -6,6 +6,9 @@
  * Every message is a JSON string carrying `borpa: 1`. The host's "Send to
  * Prepare" button calls `window.__borpaHew.sendToPlate()`, which answers with
  * a `plate` message (the document as a base64 3MF) or an `error` message.
+ * The host also calls `window.__borpaHew.setFilaments(list)` with the
+ * filaments of the selected printer (borpa/filaments.ts), after `ready` and
+ * whenever its printer or filament presets change.
  * The host side is `src/slic3r/GUI/HewPanel.cpp` in the Borpa repository.
  */
 
@@ -18,7 +21,7 @@ export interface BorpaHostInfo {
 declare global {
   interface Window {
     __BORPA_HOST__?: BorpaHostInfo
-    __borpaHew?: { sendToPlate: () => Promise<void> }
+    __borpaHew?: { sendToPlate?: () => Promise<void>; setFilaments?: (list: unknown) => void }
     wx?: { postMessage: (message: string) => void }
   }
 }
@@ -73,9 +76,9 @@ export function installBorpaBridge(exportPlate: () => Promise<PlateExport>): () 
       running = false
     }
   }
-  window.__borpaHew = { sendToPlate }
+  window.__borpaHew = { ...window.__borpaHew, sendToPlate }
   postToBorpa({ type: 'ready' })
   return () => {
-    delete window.__borpaHew
+    if (window.__borpaHew !== undefined) delete window.__borpaHew.sendToPlate
   }
 }

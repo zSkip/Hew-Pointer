@@ -46,8 +46,6 @@ const ALL_DRAW_MENU: readonly MenuEntry[] = [
 const ALL_TOOLS_MENU: readonly MenuEntry[] = [
   tool('Select'),
   tool('Eraser'),
-  tool('Paint'),
-  tool('Position Texture'),
   SEP,
   tool('Move'),
   tool('Rotate'),

@@ -20,13 +20,13 @@ describe('toolRegistry', () => {
     const offered = (names: string[]) => names.filter(toolAllowed)
     expect(toolsInGroup('Draw').map((t) => t.name)).toEqual(['Select', 'Line', 'Rectangle', 'Circle', 'Polygon', 'Arc'])
     expect(toolsInGroup('Modify').map((t) => t.name)).toEqual(offered(['Push/Pull', 'Follow Me', 'Offset', 'Fillet', 'Loft', 'Move', 'Rotate', 'Scale', 'Flip', 'Eraser']))
-    expect(toolsInGroup('Inspect').map((t) => t.name)).toEqual(['Tape Measure', 'Dimension', 'Paint', 'Section Plane'])
+    expect(toolsInGroup('Inspect').map((t) => t.name)).toEqual(['Tape Measure', 'Dimension', 'Section Plane'])
   })
 
-  it('leaves Revolve/Deform/Array along Path/Protractor/Slice/Edit Vertex/Drawing Axes/Text/Position Texture/camera tools off the rail (no group)', () => {
+  it('leaves Revolve/Deform/Array along Path/Protractor/Slice/Edit Vertex/Drawing Axes/Text/camera tools off the rail (no group)', () => {
     const ungrouped = TOOL_REGISTRY.filter((t) => t.group === undefined).map((t) => t.name)
     expect(ungrouped).toEqual([
-      'Revolve', 'Deform', 'Array along Path', 'Shell', 'Project', 'Protractor', 'Slice', 'Edit Vertex', 'Drawing Axes', 'Text', 'Position Texture',
+      'Revolve', 'Deform', 'Array along Path', 'Shell', 'Project', 'Protractor', 'Slice', 'Edit Vertex', 'Drawing Axes', 'Text',
       'Orbit', 'Pan', 'Zoom', 'Zoom Window',
       'Position Camera', 'Look Around', 'Walk',
     ].filter(toolAllowed))

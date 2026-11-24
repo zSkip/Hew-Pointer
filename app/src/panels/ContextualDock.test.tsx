@@ -25,7 +25,7 @@ describe('ContextualDock', () => {
     expect(screen.getByText('OBJECT')).toBeInTheDocument()
     expect(screen.getByText('Move')).toBeInTheDocument()
     expect(screen.getByText('Push/Pull')).toBeInTheDocument()
-    expect(screen.getByText('Paint')).toBeInTheDocument()
+    expect(screen.queryByText('Paint')).not.toBeInTheDocument()
     expect(screen.getByText('Make Component')).toBeInTheDocument()
     expect(screen.getByText('Erase')).toBeInTheDocument()
     expect(screen.queryByText('Position Texture')).not.toBeInTheDocument()
@@ -38,12 +38,12 @@ describe('ContextualDock', () => {
     expect(screen.getByText('Shell')).toBeInTheDocument()
   })
 
-  it('Object row order is Push/Pull, Fillet, Move, Paint, Shell, Make Component, Save to Library, Erase, each with an icon', () => {
+  it('Object row order is Push/Pull, Fillet, Move, Shell, Make Component, Save to Library, Erase, each with an icon', () => {
     render(<ContextualDock selectedIds={[obj(1n)]} onRun={vi.fn()} />)
     const buttons = screen.getAllByRole('button')
     // Fillet and Shell appear only where the Preview wall lets them.
     expect(buttons.map((b) => b.getAttribute('title'))).toEqual([
-      'Push/Pull', 'Fillet', 'Move', 'Paint', 'Shell', 'Make Component', 'Save to Library', 'Erase',
+      'Push/Pull', 'Fillet', 'Move', 'Shell', 'Make Component', 'Save to Library', 'Erase',
     ].filter((t) => toolAllowed(t)))
     for (const b of buttons) expect(b.querySelector('svg'), b.getAttribute('title') ?? '').not.toBeNull()
   })
@@ -271,7 +271,7 @@ describe('ContextualDock', () => {
   it('highlights nothing when activeToolId is not in the current context\'s verb set', () => {
     // Arc has no dock verb in the Object context — nothing should light up.
     render(<ContextualDock selectedIds={[obj(1n)]} onRun={vi.fn()} activeToolId="tool-arc" />)
-    for (const label of ['Push/Pull', 'Move', 'Paint', 'Erase']) {
+    for (const label of ['Push/Pull', 'Move', 'Erase']) {
       const btn = screen.getByRole('button', { name: label })
       expect(btn.style.border).toBe('1px solid transparent')
     }
