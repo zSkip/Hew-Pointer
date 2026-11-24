@@ -9,6 +9,8 @@
  * The host also calls `window.__borpaHew.setFilaments(list)` with the
  * filaments of the selected printer (borpa/filaments.ts), after `ready` and
  * whenever its printer or filament presets change.
+ * In the Sim tab the host also calls `setMode`, `setSimCapabilities` and
+ * `simEvent`, and the page sends `sim.run` and `sim.cancel` (borpa/sim/).
  * The host side is `src/slic3r/GUI/HewPanel.cpp` in the Borpa repository.
  */
 
@@ -21,7 +23,13 @@ export interface BorpaHostInfo {
 declare global {
   interface Window {
     __BORPA_HOST__?: BorpaHostInfo
-    __borpaHew?: { sendToPlate?: () => Promise<void>; setFilaments?: (list: unknown) => void }
+    __borpaHew?: {
+      sendToPlate?: () => Promise<void>
+      setFilaments?: (list: unknown) => void
+      setMode?: (mode: unknown) => void
+      setSimCapabilities?: (caps: unknown) => void
+      simEvent?: (event: unknown) => void
+    }
     wx?: { postMessage: (message: string) => void }
   }
 }
@@ -34,6 +42,8 @@ export type BorpaMessage =
   | { type: 'ready' }
   | { type: 'plate'; name: string; data: string; nonSolid: number }
   | { type: 'error'; code: 'not-ready' | 'empty' | 'export-failed'; message: string }
+  | { type: 'sim.run'; job: string; study: unknown; geometry: unknown }
+  | { type: 'sim.cancel'; job: string }
 
 export type PlateExport =
   | { name: string; bytes: Uint8Array; nonSolid: number }
@@ -45,7 +55,7 @@ export function postToBorpa(msg: BorpaMessage): void {
 }
 
 /** Base64 in 32 KiB slices, so no call receives the whole array as arguments. */
-function toBase64(bytes: Uint8Array): string {
+export function toBase64(bytes: Uint8Array): string {
   let binary = ''
   for (let i = 0; i < bytes.length; i += 0x8000) {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))

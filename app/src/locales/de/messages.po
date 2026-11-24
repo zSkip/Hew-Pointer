@@ -232,6 +232,10 @@ msgstr "{count, plural, one {Verknüpfung von # Kopie gelöst, um sie zu vereini
 msgid "{count} + {extraPages} cut list"
 msgstr "{count} + {extraPages} Zuschnittliste"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "{count} faces"
+msgstr ""
+
 #. How many linked placements share one shape; shown beside the type in Object Info and as the Outliner badge tooltip
 #: src/linkedCopyCopy.ts
 msgid "{count} linked"
@@ -445,6 +449,10 @@ msgstr "{lines_added, plural, one {{lines_added} Zeichenlinie wurde ebenfalls im
 #: src/panels/ImportReportDialog.tsx
 msgid "{lines_added, plural, one {No objects were created. {lines_added} line of drawing came in.} other {No objects were created. {lines_added} lines of drawing came in.}}"
 msgstr "{lines_added, plural, one {Es wurden keine Objekte erstellt. {lines_added} Zeichenlinie wurde importiert.} other {Es wurden keine Objekte erstellt. {lines_added} Zeichenlinien wurden importiert.}}"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "{lost} faces were lost to an edit. Pick them again."
+msgstr ""
 
 #. Compact count in millions, e.g. 1.23M triangles
 #: src/log/RenderStatsReadout.tsx
@@ -676,6 +684,10 @@ msgstr "{name} arbeitet …"
 #: src/health/healthCopy.ts
 msgid "{needing} mending: Mend can merge points, separate parts and fill gaps."
 msgstr "{needing} eine Reparatur: Reparieren kann Punkte zusammenführen, Teile trennen und Lücken füllen."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "{nodes} nodes, {elements} elements"
+msgstr ""
 
 #: src/log/reportBundle.ts
 msgid "{objectCount, plural, one {# object} other {# objects}}"
@@ -1137,6 +1149,14 @@ msgstr "1"
 msgid "1 cm"
 msgstr "1 cm"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "1 face"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "1 face was lost to an edit. Pick it again."
+msgstr ""
+
 #: src/panels/PrintDialog.tsx
 msgid "1 ft"
 msgstr "1 ft"
@@ -1240,6 +1260,14 @@ msgstr "Eine Abrundung, die in diese übergeht, kann nach dieser Änderung nicht
 #: src/panels/WelcomeScreen.tsx
 msgid "A finished piece: true-curve oak rim, brass hour markers as components, and a translucent glass cover."
 msgstr "Ein fertiges Stück: Eichenrand mit echten Rundungen, Stundenmarken aus Messing als Komponenten und eine durchscheinende Glasabdeckung."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "A fixture has no faces. Pick its faces, or remove it."
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "A force has no faces. Pick its faces, or remove it."
+msgstr ""
 
 #: src/kernelErrors.ts
 msgid "A group can't be moved into itself or into one of its own members. Pick a different group, or move it out to the top level."
@@ -1382,6 +1410,10 @@ msgstr "aktiver Schnitt"
 msgid "add"
 msgstr "hinzufügen"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Add"
+msgstr ""
+
 #: src/App.tsx
 msgid "Add \"{displayName}\" to palette"
 msgstr "„{displayName}“ zur Palette hinzufügen"
@@ -1389,6 +1421,10 @@ msgstr "„{displayName}“ zur Palette hinzufügen"
 #: src/scenes/scenesModel.ts
 msgid "Add a description — it shows on the phone."
 msgstr "Beschreibung hinzufügen – sie wird auf dem Telefon angezeigt."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Add a force."
+msgstr ""
 
 #: src/settings/ControlsPane.tsx
 msgid "Add a shortcut"
@@ -1401,6 +1437,14 @@ msgstr "Tastenkürzel zu {label} hinzufügen"
 #: src/panels/MaterialPalette.tsx
 #~ msgid "Add color"
 #~ msgstr "Farbe hinzufügen"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Add fixture"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Add force"
+msgstr ""
 
 #: src/i18n/nativeMenu.ts
 #: src/palette/registry.ts
@@ -1685,6 +1729,10 @@ msgstr "Automatisch"
 msgid "Auto follows your OS's light/dark appearance setting."
 msgstr "Automatisch folgt der Hell/Dunkel-Einstellung Ihres Betriebssystems."
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Automatic"
+msgstr ""
+
 #: src/settings/AdvancedPane.tsx
 #: src/settings/FluentSettingsPage.tsx
 msgid "Automatically download and install updates"
@@ -1724,6 +1772,10 @@ msgstr "Zurück"
 msgctxt "view"
 msgid "Back"
 msgstr "Hinten"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Back to setup"
+msgstr ""
 
 #: src/i18n/nativeMenu.ts
 #: src/palette/curveEntries.ts
@@ -1808,6 +1860,10 @@ msgstr "Bolzen"
 #: src/palette/registry.ts
 msgid "boolean"
 msgstr "boolesch"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Borpa did not find its solvers (Gmsh and CalculiX), so studies cannot run. Reinstalling Borpa puts them back."
+msgstr ""
 
 #: src/lock/lockModel.ts
 msgid "Both copies are locked"
@@ -1912,6 +1968,7 @@ msgstr "Diese Ecke kann nicht aufgedickt werden: Ihre Flächen treffen sich nich
 msgid "cancel"
 msgstr "abbrechen"
 
+#: src/borpa/sim/SimPanel.tsx
 #: src/health/healthCopy.ts
 #: src/panels/BusyNotice.tsx
 #: src/panels/ConfirmDialog.tsx
@@ -1934,6 +1991,10 @@ msgstr "abbrechen"
 #: src/shop/ScanSheet.tsx
 msgid "Cancel"
 msgstr "Abbrechen"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Cancelled."
+msgstr ""
 
 #: src/panels/ScenesPanel.tsx
 msgid "Captured Properties"
@@ -1980,6 +2041,22 @@ msgstr "Fase"
 msgid "Change component axes"
 msgstr "Komponentenachsen ändern"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Change fixed faces"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Change force"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Change loaded faces"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Change material"
+msgstr ""
+
 #: src/i18n/historyLabels.ts
 msgid "Change material opacity"
 msgstr "Materialdeckkraft ändern"
@@ -1987,6 +2064,10 @@ msgstr "Materialdeckkraft ändern"
 #: src/i18n/historyLabels.ts
 msgid "Change material surface"
 msgstr "Materialoberfläche ändern"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Change mesh size"
+msgstr ""
 
 #: src/i18n/historyLabels.ts
 msgid "Change tags"
@@ -2247,6 +2328,14 @@ msgstr "Klicken Sie auf ein Objekt, um es zu drehen"
 #: src/tools/ScaleTool.ts
 msgid "Click an object to scale it"
 msgstr "Klicken Sie auf ein Objekt, um es zu skalieren"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Click an Object to set up a stress study on it."
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Click faces of the Object to add them; click a picked face to take it out. Orbit with the middle button."
+msgstr ""
 
 #: src/tools/ArcTool.ts
 msgid "Click the arc's first endpoint — on the ground plane or any face or sketch."
@@ -3155,6 +3244,18 @@ msgstr "verformen"
 msgid "Deform"
 msgstr "Verformen"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Deformation scale"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Deformation shown ×{scaleText}"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Deformation: not shown"
+msgstr ""
+
 #: src/panels/ScenesPanel.tsx
 msgid "Delay (s)"
 msgstr "Verzögerung (s)"
@@ -3464,6 +3565,7 @@ msgstr "Alle verwerfen"
 msgid "discard changes"
 msgstr "Änderungen verwerfen"
 
+#: src/borpa/sim/SimPanel.tsx
 #: src/panels/SkpLossNotice.tsx
 #: src/viewport/Viewport.tsx
 msgid "Dismiss"
@@ -3472,6 +3574,10 @@ msgstr "Schließen"
 #: src/viewport/Viewport.tsx
 msgid "Dismiss the graphics-acceleration notice"
 msgstr "Hinweis zur Grafikbeschleunigung schließen"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Displacement"
+msgstr ""
 
 #: src/scenes/scenesModel.ts
 msgid "Display (grid, axes, guides)"
@@ -3521,6 +3627,7 @@ msgstr "Nicht beibehalten"
 msgid "Don’t Save"
 msgstr "Nicht speichern"
 
+#: src/borpa/sim/SimPanel.tsx
 #: src/health/healthCopy.ts
 #: src/panels/LibraryUpdateReview.tsx
 #: src/panels/PrintDialog.tsx
@@ -3901,6 +4008,10 @@ msgstr "Esc zum Schließen"
 msgid "Esc, Enter, Tab and the arrow keys stay with the tools (cancel, commit, axis lock), and so does the Measurements box while you type a value."
 msgstr "Esc, Enter, Tab und die Pfeiltasten bleiben bei den Werkzeugen (Abbrechen, Übernehmen, Achsensperre), ebenso das Messwertfeld, während Sie einen Wert eingeben."
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Every force is zero."
+msgstr ""
+
 #: src/health/healthCopy.ts
 msgid "Every object here is solid."
 msgstr "Jedes Objekt hier ist geschlossen."
@@ -4231,9 +4342,21 @@ msgstr "Die Kamera an die gesamte Geometrie der Szene anpassen."
 msgid "fix"
 msgstr "reparieren"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Fix at least one face, or the part is free to fly away."
+msgstr ""
+
 #: src/panels/SentReportsDialog.tsx
 msgid "Fixed"
 msgstr "Behoben"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Fixed {index}"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Fixed faces"
+msgstr ""
 
 #: src/panels/SentReportsDialog.tsx
 msgid "Fixed in Hew {v}"
@@ -4377,9 +4500,29 @@ msgstr "Schrift – {selectedLabel}"
 msgid "Font family"
 msgstr "Schriftfamilie"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Force {axis}, newtons"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Force {index}"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Forces"
+msgstr ""
+
 #: src/panels/SentReportsDialog.tsx
 msgid "Forget"
 msgstr "Vergessen"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Forget lost faces"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Forget them"
+msgstr ""
 
 #: src/panels/SentReportsDialog.tsx
 msgid "Forget this report?"
@@ -4670,6 +4813,10 @@ msgstr "Höhe"
 #: src/panels/TextDialog.tsx
 msgid "Height ({unit})"
 msgstr "Höhe ({unit})"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "held in place"
+msgstr ""
 
 #: src/panels/TagsPanel.tsx
 msgid "Held open while filtering"
@@ -5532,9 +5679,17 @@ msgstr "Querformat"
 msgid "Language"
 msgstr "Sprache"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Largest displacement"
+msgstr ""
+
 #: src/panels/PrintDialog.tsx
 msgid "Largest standard scale that fits one page"
 msgstr "Größter Standardmaßstab, der auf eine Seite passt"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Largest stress (von Mises)"
+msgstr ""
 
 #: src/palette/registry.ts
 msgid "laser"
@@ -6058,6 +6213,7 @@ msgid "Matches the Library"
 msgstr "Stimmt mit der Bibliothek überein"
 
 #: src/App.tsx
+#: src/borpa/sim/SimPanel.tsx
 #: src/library/libraryModel.ts
 msgid "Material"
 msgstr "Material"
@@ -6190,6 +6346,22 @@ msgstr "Das Zusammenführen so weit entfernter Punkte würde eine dünne Fläche
 #: src/kernelErrors.ts
 msgid "Merging those points would fold faces onto each other. Turn on Separate parts that touch at a point too."
 msgstr "Das Zusammenführen dieser Punkte würde Flächen aufeinanderfalten. Schalten Sie zusätzlich „Teile trennen, die sich in einem Punkt berühren“ ein."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Mesh"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Mesh size"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Mesh size, millimetres"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Meshing…"
+msgstr ""
 
 #: src/panels/MaterialPalette.tsx
 #~ msgid "Metallic"
@@ -6935,6 +7107,7 @@ msgstr "Mutter"
 msgid "Ø {length}"
 msgstr "Ø {length}"
 
+#: src/borpa/sim/SimPanel.tsx
 #: src/i18n/nativeMenu.ts
 #: src/panels/MenuBar.tsx
 #: src/panels/ObjectInfoPanel.tsx
@@ -7677,6 +7850,14 @@ msgstr "Perspektivansicht"
 msgid "photo"
 msgstr "Foto"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Pick faces"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Pick faces of the Object this study is on."
+msgstr ""
+
 #: src/palette/registry.ts
 msgid "Pick faces, edges, and objects in the model."
 msgstr "Flächen, Kanten und Objekte im Modell auswählen."
@@ -7772,6 +7953,14 @@ msgstr "Bild platzieren"
 msgid "Place instance"
 msgstr "Instanz platzieren"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Placeholder values (PLA's), until measured filament properties are available."
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Placeholder values for {placeholderType}, until measured filament properties are available."
+msgstr ""
+
 #: src/kernelErrors.ts
 msgid "Placing that instance here would make a component contain itself, directly or through another component. Pick a different definition, or explode/make unique the instance that closes the loop."
 msgstr "Diese Instanz hier zu platzieren würde dazu führen, dass eine Komponente sich selbst enthält, direkt oder über eine andere Komponente. Wählen Sie eine andere Definition, oder lösen Sie die Instanz, die den Kreis schließt, auf bzw. machen Sie sie eindeutig."
@@ -7784,6 +7973,10 @@ msgstr "plotten"
 msgid "png"
 msgstr "png"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Point at the part to read the value there."
+msgstr ""
+
 #: src/shop/ScanSheet.tsx
 msgid "Point the camera at the QR code on the desktop."
 msgstr "Richten Sie die Kamera auf den QR-Code auf dem Desktop."
@@ -7791,6 +7984,14 @@ msgstr "Richten Sie die Kamera auf den QR-Code auf dem Desktop."
 #: src/panels/ObjectInfoPanel.tsx
 msgid "Points"
 msgstr "Punkte"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Poisson's ratio"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Poisson's ratio ν"
+msgstr ""
 
 #: src/palette/registry.ts
 msgid "polygon"
@@ -8096,6 +8297,10 @@ msgstr "Erreichbar, aber dieser Server erfordert einen Upload-Schlüssel – geb
 msgid "Reachable: {reachableHost} — {reachableDetails}"
 msgstr "Erreichbar: {reachableHost} – {reachableDetails}"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Reaction at fixtures"
+msgstr ""
+
 #: src/panels/ImportingOverlay.tsx
 msgid "Reading placements: {done} of {total}"
 msgstr "Platzierungen werden gelesen: {done} von {total}"
@@ -8103,6 +8308,10 @@ msgstr "Platzierungen werden gelesen: {done} von {total}"
 #: src/panels/ImportingOverlay.tsx
 msgid "Reading placements: {done} of {total}, {shapes} shapes so far"
 msgstr "Platzierungen werden gelesen: {done} von {total}, bisher {shapes} Formen"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Reading results…"
+msgstr ""
 
 #: src/panels/ImportingOverlay.tsx
 msgid "Reading the file"
@@ -8310,6 +8519,7 @@ msgstr "Später erinnern"
 msgid "remove"
 msgstr "entfernen"
 
+#: src/borpa/sim/SimPanel.tsx
 #: src/settings/ControlsPane.tsx
 msgid "Remove"
 msgstr "Entfernen"
@@ -8325,6 +8535,14 @@ msgstr "Entartete Flächen entfernen"
 #: src/palette/registry.ts
 msgid "Remove every construction guide."
 msgstr "Alle Konstruktionshilfslinien entfernen."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Remove fixture"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Remove force"
+msgstr ""
 
 #: src/panels/library/LibraryDetailPane.tsx
 msgid "Remove keyword {kw}"
@@ -8593,6 +8811,18 @@ msgstr "Jetzt neu starten"
 msgid "Restore"
 msgstr "Wiederherstellen"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Result"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Result shown"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Results for printed parts are estimates: layers, walls and infill make a printed part less stiff and weaker than the solid material, and weakest across its layers."
+msgstr ""
+
 #: src/panels/library/LibraryMenu.tsx
 msgid "Reveal in Finder"
 msgstr "Im Finder zeigen"
@@ -8755,6 +8985,10 @@ msgstr "Reihen entlang {color} – drücken Sie eine Pfeiltaste, um sie zu ände
 #: src/tools/MoveTool.ts
 msgid "Rows cannot run along the move — pick another direction."
 msgstr "Reihen können nicht entlang der Bewegung verlaufen – wählen Sie eine andere Richtung."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Run"
+msgstr ""
 
 #: src/viewport/Viewport.tsx
 msgid "Running without graphics acceleration — large models will be slow."
@@ -9570,6 +9804,10 @@ msgstr "Die dünnen Linien ein- oder ausblenden, wo eine gerundete Kante oder Ec
 msgid "Show or hide the world axes."
 msgstr "Die Weltachsen ein- oder ausblenden."
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Show result"
+msgstr ""
+
 #: src/panels/TagsPanel.tsx
 msgid "Show tagged objects"
 msgstr "Getaggte Objekte einblenden"
@@ -9601,6 +9839,15 @@ msgstr "Die Werkzeugleiste auf Symbole verkleinern oder die Werkzeugnamen wieder
 #: src/palette/registry.ts
 msgid "sidebar"
 msgstr "Seitenleiste"
+
+#: src/App.tsx
+#: src/borpa/sim/SimPanel.tsx
+msgid "Simulation"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Simulations run inside Borpa."
+msgstr ""
 
 #. Library list column header
 #: src/panels/library/LibraryListHead.tsx
@@ -9782,6 +10029,14 @@ msgstr "Volumenkörper"
 msgid "Solid"
 msgstr "Volumenkörper"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Solver log"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Solving…"
+msgstr ""
+
 #: src/panels/TextDialog.tsx
 msgid "Some glyphs in this font overlap themselves ({chars}) and may not extrude cleanly — you can still place it."
 msgstr "Einige Zeichen in dieser Schrift überlappen sich selbst ({chars}) und lassen sich möglicherweise nicht sauber extrudieren – Sie können den Text trotzdem platzieren."
@@ -9880,6 +10135,7 @@ msgstr "Ein neues, leeres Dokument beginnen."
 msgid "Start modeling"
 msgstr "Mit dem Modellieren beginnen"
 
+#: src/borpa/sim/SimPanel.tsx
 #: src/panels/PhoneShareDialog.tsx
 msgid "Starting…"
 msgstr "Wird gestartet …"
@@ -9891,6 +10147,10 @@ msgstr "Stationen auf {noteStations} gesetzt."
 #: src/viewport/MeasurementBox.tsx
 msgid "Steps"
 msgstr "Schritte"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Stiffness E"
+msgstr ""
 
 #: src/palette/registry.ts
 msgid "stl"
@@ -9919,6 +10179,14 @@ msgstr "STL-Modell"
 #: src/log/reportImports.ts
 msgid "STL model (.stl)"
 msgstr "STL-Modell (.stl)"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Stress (von Mises)"
+msgstr ""
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Stress study"
+msgstr ""
 
 #. Example tag path shown as placeholder text
 #. Example tag path shown as placeholder text
@@ -10611,6 +10879,10 @@ msgstr "Die Linie kreuzt sich selbst oder berührt unterwegs den Rand der Fläch
 msgid "The line's two ends are the same point. Click a second, different point."
 msgstr "Die beiden Enden der Linie sind derselbe Punkt. Klicken Sie auf einen zweiten, anderen Punkt."
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "The material needs a stiffness above 0 and a Poisson's ratio from 0 to below 0.5."
+msgstr ""
+
 #: src/panels/RescaleConfirmDialog.tsx
 msgid "The measured distance is {measured}. Resize {scopeLabel} — every copy of it — so it becomes {typed}? Geometry outside it stays put."
 msgstr "Der gemessene Abstand beträgt {measured}. {scopeLabel} – jede Kopie davon – so skalieren, dass er {typed} beträgt? Geometrie außerhalb bleibt unverändert."
@@ -10622,6 +10894,10 @@ msgstr "Der gemessene Abstand beträgt {measured}. {scopeLabel} so skalieren, da
 #: src/panels/RescaleConfirmDialog.tsx
 msgid "The measured distance is {measured}. Resize the whole model so it becomes {typed}?"
 msgstr "Der gemessene Abstand beträgt {measured}. Das ganze Modell so skalieren, dass er {typed} beträgt?"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "The model changed since this run. Run the study again for results that match it."
+msgstr ""
 
 #: src/log/reportBundle.ts
 msgid "The model is unavailable — no document loaded."
@@ -10707,6 +10983,10 @@ msgstr "Das Zertifikat des Meldedienstes wird von diesem Computer nicht als vert
 #: src/panels/ReportBugDialog.tsx
 msgid "The report was rejected as invalid — check the description length."
 msgstr "Der Bericht wurde als ungültig abgelehnt – prüfen Sie die Länge der Beschreibung."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "The result could not be read:"
+msgstr ""
 
 #: src/kernelErrors.ts
 msgid "The result would be empty — the objects don't overlap that way. Check that the solids actually intersect."
@@ -10803,6 +11083,10 @@ msgstr "Die Schnittebene verläuft nicht durch das Objekt. Positionieren Sie den
 #: src/tools/FollowMeTool.ts
 msgid "The solid has a face that isn't flat enough to join the sweep to — left as a separate object."
 msgstr "Der Volumenkörper hat eine Fläche, die nicht eben genug ist, um den Sweep damit zu verbinden – als getrenntes Objekt belassen."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "The study did not run."
+msgstr ""
 
 #: src/tools/FollowMeTool.ts
 msgid "The sweep starts at the profile and follows the path’s shape — click to sweep it, or drag along the path for a partial sweep."
@@ -11182,6 +11466,10 @@ msgstr "Diese verschachtelte Komponente kann hier nicht zum Bearbeiten geöffnet
 msgid "This object is no longer in the model."
 msgstr "Dieses Objekt ist nicht mehr im Modell."
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "This Object is not a closed solid, so it cannot be simulated. Model Health can find the gaps."
+msgstr ""
+
 #: src/health/healthCopy.ts
 msgid "This object is solid."
 msgstr "Dieses Objekt ist geschlossen."
@@ -11353,6 +11641,10 @@ msgstr "three.js renderer.info für den letzten Frame. „CPU-ms“ ist die Daue
 #: src/palette/registry.ts
 msgid "Throw away every change since the last save and read the file back in."
 msgstr "Alle Änderungen seit dem letzten Speichern verwerfen und die Datei neu einlesen."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Time"
+msgstr ""
 
 #: src/panels/PrintDialog.tsx
 msgid "Title block"
@@ -11540,6 +11832,10 @@ msgstr "Ablage"
 #: src/log/RenderStatsReadout.tsx
 msgid "tri {triangles}"
 msgstr "Dreiecke {triangles}"
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "True scale"
+msgstr ""
 
 #: src/settings/ControlsPane.tsx
 msgid "Try Another"
@@ -12027,6 +12323,10 @@ msgstr "Vollständigen Editor verwenden"
 msgid "Use my system fonts…"
 msgstr "Meine Systemschriften verwenden …"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Use placeholder values"
+msgstr ""
+
 #: src/health/healthCopy.ts
 msgid "Use recommended choices"
 msgstr "Empfohlene Auswahl verwenden"
@@ -12309,6 +12609,10 @@ msgstr "Sie verwenden {running}."
 msgid "You’re up to date"
 msgstr "Sie sind auf dem neuesten Stand"
 
+#: src/borpa/sim/SimPanel.tsx
+msgid "Young's modulus, MPa"
+msgstr ""
+
 #: src/panels/FollowNoticeBar.tsx
 msgid "Your bug report {onlyId} has a reply from Hew’s developer."
 msgstr "Ihr Fehlerbericht {onlyId} hat eine Antwort vom Hew-Entwickler."
@@ -12328,6 +12632,10 @@ msgstr "Ihr Computer fragt zum Installieren nach Ihrem Passwort."
 #: src/panels/LibraryDialog.tsx
 msgid "Your library folder needs permission again."
 msgstr "Ihr Bibliotheksordner braucht erneut eine Berechtigung."
+
+#: src/borpa/sim/SimPanel.tsx
+msgid "Your own values."
+msgstr ""
 
 #: src/panels/SentReportsDialog.tsx
 msgid "Your reply"
