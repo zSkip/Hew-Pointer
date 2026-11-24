@@ -32,7 +32,7 @@ import type { Scene as WasmScene } from '../wasm/loader'
 import { assignFilament, type AssignMode } from './buildMaterial'
 import { FILAMENT_GUARDS, topEntryLabel } from './filamentRules'
 import { selectedFilament } from './filaments'
-import { registerFilamentScene } from './objectFilament'
+import { readObjectFilament, registerFilamentScene } from './objectFilament'
 
 /** Methods that make new Objects from sketches, faces or sheets. */
 const CREATING = /^(extrude_region|extrude_face_as_new_object|follow_me_|revolve$|revolve_in_instance$|loft$|make_solid_from_sketches$|thicken_sheet|place_text$)/
@@ -51,9 +51,29 @@ export function allObjectIds(scene: ObjectScene): Set<bigint> {
 }
 
 /** A document from before filaments: every Object whose base material is no
- *  filament, or that carries per-face paint, takes the selected filament. */
+ *  filament, or that carries per-face paint, takes the selected filament.
+ *  A linked set keeps its filament on its placements, not on its shared
+ *  solid (making a set moves the base there), so a definition member with no
+ *  base of its own whose placement holds a filament already has one. */
 export function flattenDocument(scene: WasmScene): void {
-  giveFilament(scene, [...allObjectIds(scene)], 'unlinked')
+  const held = filamentOnPlacement(scene)
+  giveFilament(scene, [...allObjectIds(scene)].filter((o) => !held.has(o)), 'unlinked')
+}
+
+/** Definition members with no filament of their own whose definition is
+ *  placed by a placement that carries one. */
+function filamentOnPlacement(scene: WasmScene): Set<bigint> {
+  const out = new Set<bigint>()
+  if (selectedFilament() === null) return out
+  for (const c of scene.component_ids()) {
+    const placements = Array.from(scene.instances_of(c))
+    if (placements.length === 0) continue
+    for (const o of scene.component_member_objects(c)) {
+      if (readObjectFilament(scene, o) !== null) continue
+      if (placements.some((instance) => readObjectFilament(scene, o, { instance }) !== null)) out.add(o)
+    }
+  }
+  return out
 }
 
 function giveFilament(scene: WasmScene, objects: readonly bigint[], mode: AssignMode): void {

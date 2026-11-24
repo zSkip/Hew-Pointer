@@ -18,7 +18,7 @@ import { PREVIEW_EXTRUDE_NEW_FALLBACK } from '../tools/previewTint'
 import type { Snap } from '../tools/types'
 import { friendlyErrorText, kernelErrorMessage, parseKernelErrorCode } from '../kernelErrors'
 import { getLengthUnit, setLengthUnit, type LengthFormat } from '../settings/units'
-import { withBuildFilament } from './filamentScene'
+import { flattenDocument, withBuildFilament } from './filamentScene'
 import { FILAMENT_REFUSAL_CODE } from './filamentRules'
 import { GENERIC_FILAMENTS, resetFilamentsForTest, selectFilament } from './filaments'
 import { differsFromSelected, filamentDifference } from './objectFilament'
@@ -565,5 +565,44 @@ describe('operations that would add to an Object of another filament', () => {
     expectRefused(thrown(() => scene.project_depth(box, sketch, faces, -0.1, 0)), PETG, PLA)
     scene.project_depth(box, sketch, faces, 0.1, 0).free()
     expect(measure(scene, box).volume).toBeLessThan(1)
+  })
+})
+
+describe('reopening a document with a linked set', () => {
+  it('keeps a PETG linked set PETG while PLA is selected', () => {
+    const box = makeBox(scene)
+    const set = scene.wrap_linked(0, box)
+    // A second copy, placed as a linked paste places one: with the set's own material.
+    const copy = scene.place_instance(scene.instance_def(set)!, Float64Array.of(1, 0, 0, 3, 0, 1, 0, 0, 0, 0, 1, 0))
+    scene.set_instance_material(copy, scene.instance_appearance_material(set))
+    const saved = new Uint8Array(scene.save())
+
+    selectFilament(PLA)
+    const reopened = withBuildFilament(new Scene() as unknown as WasmScene)
+    reopened.load(saved)
+    const depth = reopened.undo_depth()
+    flattenDocument(reopened)
+    const placements = Array.from(reopened.instance_ids())
+    expect(placements.length).toBeGreaterThan(0)
+    for (const instance of placements) {
+      const def = reopened.instance_def(instance)!
+      for (const member of Array.from(reopened.component_member_objects(def))) {
+        expect(filamentDifference(reopened, member, { instance })).toEqual({ object: PETG, selected: PLA })
+      }
+    }
+    expect(reopened.undo_depth()).toBe(depth)
+    expect(inUse(reopened, PLA)).toBe(false)
+  })
+
+  it('still gives a document from before filaments the selected filament', () => {
+    resetFilamentsForTest([], null)
+    makeBox(scene)
+    const saved = new Uint8Array(scene.save())
+    resetFilamentsForTest(GENERIC_FILAMENTS, PLA)
+    const reopened = withBuildFilament(new Scene() as unknown as WasmScene)
+    reopened.load(saved)
+    flattenDocument(reopened)
+    const [only] = Array.from(reopened.object_ids())
+    expect(materialNames(reopened, only)).toEqual([PLA])
   })
 })
