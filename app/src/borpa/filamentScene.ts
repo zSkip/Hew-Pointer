@@ -18,16 +18,21 @@
  * command already goes through, so no tool needs to know about filaments.
  * The operations' own results are returned unchanged; a failure to assign is
  * logged and leaves the operation as the kernel made it.
+ *
+ * The same wrapper refuses what would mix filaments in one Object: a union
+ * across filaments, and material added to an Object of another filament than
+ * the selected one (filamentRules.ts). Push/Pull alone also asks first
+ * (borpa/objectFilament.ts), to pull a new Object out of such a face.
  */
 
 import { i18n } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
-import { historyLabel } from '../i18n/historyLabels'
-import { parseHistoryEntries } from '../panels/changesModel'
 import { inHistoryBracket } from '../tools/transformSelection'
 import type { Scene as WasmScene } from '../wasm/loader'
 import { assignFilament, type AssignMode } from './buildMaterial'
+import { FILAMENT_GUARDS, topEntryLabel } from './filamentRules'
 import { selectedFilament } from './filaments'
+import { registerFilamentScene } from './objectFilament'
 
 /** Methods that make new Objects from sketches, faces or sheets. */
 const CREATING = /^(extrude_region|extrude_face_as_new_object|follow_me_|revolve$|revolve_in_instance$|loft$|make_solid_from_sketches$|thicken_sheet|place_text$)/
@@ -49,13 +54,6 @@ export function allObjectIds(scene: ObjectScene): Set<bigint> {
  *  filament, or that carries per-face paint, takes the selected filament. */
 export function flattenDocument(scene: WasmScene): void {
   giveFilament(scene, [...allObjectIds(scene)], 'unlinked')
-}
-
-/** The newest undo entry's label, as the Edit menu would show it. */
-function topEntryLabel(scene: WasmScene): string | null {
-  const entries = parseHistoryEntries(scene.history_entries_json())
-  const top = entries.undo[entries.undo.length - 1]
-  return top === undefined ? null : historyLabel(top.kind, top.label)
 }
 
 function giveFilament(scene: WasmScene, objects: readonly bigint[], mode: AssignMode): void {
@@ -93,8 +91,9 @@ function runBuilding(proxy: WasmScene, target: WasmScene, method: (...a: unknown
 }
 
 /**
- * The Scene, with new geometry built in the selected filament. Everything
- * else passes straight through to the kernel.
+ * The Scene, with new geometry built in the selected filament and the
+ * different-filament rules (filamentRules.ts) applied. Everything else passes
+ * straight through to the kernel.
  */
 export function withBuildFilament(scene: WasmScene): WasmScene {
   const proxy: WasmScene = new Proxy(scene, {
@@ -102,10 +101,14 @@ export function withBuildFilament(scene: WasmScene): WasmScene {
       const value: unknown = Reflect.get(target, prop, target)
       if (typeof prop !== 'string' || typeof value !== 'function') return value
       const method = value as (...a: unknown[]) => unknown
-      if (CREATING.test(prop) && !prop.includes('preview')) return (...args: unknown[]) => runBuilding(proxy, target, method, args, 'unassigned')
-      if (IMPORTING.test(prop)) return (...args: unknown[]) => runBuilding(proxy, target, method, args, 'all')
-      return value
+      const mode: AssignMode | null = CREATING.test(prop) && !prop.includes('preview') ? 'unassigned' : IMPORTING.test(prop) ? 'all' : null
+      const guard = Object.prototype.hasOwnProperty.call(FILAMENT_GUARDS, prop) ? FILAMENT_GUARDS[prop] : undefined
+      if (mode === null && guard === undefined) return value
+      const run = (args: unknown[]): unknown => (mode === null ? method.apply(target, args) : runBuilding(proxy, target, method, args, mode))
+      if (guard === undefined) return (...args: unknown[]) => run(args)
+      return (...args: unknown[]) => guard(proxy, target, args, () => run(args))
     },
   })
+  registerFilamentScene(proxy, scene)
   return proxy
 }
