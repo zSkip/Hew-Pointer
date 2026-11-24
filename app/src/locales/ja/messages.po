@@ -390,6 +390,7 @@ msgstr ""
 msgid "{gb} GB"
 msgstr ""
 
+#: src/borpa/filamentRules.ts
 #: src/health/healthCopy.ts
 msgid "{head} and {last}"
 msgstr ""
@@ -6726,6 +6727,10 @@ msgstr ""
 msgid "No document."
 msgstr ""
 
+#: src/borpa/objectFilament.ts
+msgid "no filament"
+msgstr ""
+
 #: src/panels/FilamentSidebar.tsx
 msgid "No filament matches."
 msgstr ""
@@ -8101,6 +8106,10 @@ msgstr ""
 msgid "Pull out the bulge"
 msgstr ""
 
+#: src/tools/PushPullTool.ts
+msgid "Pulls out a new {selected} object: this face is {faceFilament}. Click to commit — or type an exact distance."
+msgstr ""
+
 #: src/App.tsx
 msgid "Purge"
 msgstr ""
@@ -8893,6 +8902,10 @@ msgstr ""
 
 #: src/palette/registry.ts
 msgid "roundcorner"
+msgstr ""
+
+#: src/borpa/filamentRules.ts
+msgid "Rounding these edges would add {s} to an object made of {o}. Select {o} to round them."
 msgstr ""
 
 #: src/palette/registry.ts
@@ -11107,6 +11120,14 @@ msgstr ""
 msgid "There is nothing to revert."
 msgstr ""
 
+#: src/borpa/filamentRules.ts
+msgid "These are made of {list}, and an object is printed in one filament, so they can't become one object. Keep them separate, or give them the same filament first."
+msgstr ""
+
+#: src/borpa/filamentRules.ts
+msgid "These are made of {list}, and linked copies share one filament. Give them the same filament first."
+msgstr ""
+
 #: src/health/healthCopy.ts
 msgid "These are single curved sheets, such as terrain or fabric. Hew can't add thickness to curved sheets yet, so they stay as they are."
 msgstr ""
@@ -11285,6 +11306,22 @@ msgid "This edge has a face on only one side — there's nothing to merge it wit
 msgstr ""
 
 #: src/tools/PushPullTool.ts
+msgid "This face is {faceFilament}, so it can't be pulled out in {selected} here. Push it in to cut, select {faceFilament}, or close the component to pull out a new object."
+msgstr ""
+
+#: src/tools/PushPullTool.ts
+msgid "This face is {faceFilament}: pulling it out makes a new {selected} object, pushing it in cuts it."
+msgstr ""
+
+#: src/tools/PushPullTool.ts
+msgid "This face is {faceFilament}: pushing it in cuts it, but it can't be pulled out in {selected} here."
+msgstr ""
+
+#: src/borpa/filamentRules.ts
+msgid "This face is {o}, so it can't be pulled out in {s} here. Push it in to cut, select {o}, or pull it out outside the component to make a new {s} object."
+msgstr ""
+
+#: src/tools/PushPullTool.ts
 msgid "This face is locked, so this makes a NEW object. Move to extrude, click to commit — or type an exact distance."
 msgstr ""
 
@@ -11418,6 +11455,10 @@ msgstr ""
 
 #: src/kernelErrors.ts
 msgid "This nested component can't open for editing here — its placement is unevenly scaled or inside a group. Explode the instance, or make it unique, to edit its parts."
+msgstr ""
+
+#: src/borpa/filamentRules.ts
+msgid "This object is {o}, so embossing would add {s} to it. Engrave instead, or select {o} to emboss."
 msgstr ""
 
 #: src/health/healthBatch.ts
@@ -11569,6 +11610,10 @@ msgstr ""
 msgid "This shape touches another shape at a point, so it can't be pulled as one piece. Pull the shape inside it instead, or move them a hair apart."
 msgstr ""
 
+#: src/borpa/filamentRules.ts
+msgid "This sheet is {o}, so thickening it would add {s} to it. Select {o} to thicken it."
+msgstr ""
+
 #: src/panels/SkpLossNotice.tsx
 msgid "This SketchUp format left out:"
 msgstr ""
@@ -11579,6 +11624,10 @@ msgstr ""
 
 #: src/kernelErrors.ts
 msgid "This step couldn't be undone or redone safely, so the model was left unchanged. If this keeps happening, use Report Bug to capture the session."
+msgstr ""
+
+#: src/borpa/filamentRules.ts
+msgid "This sweep would add {s} to an object made of {o}. Sweep it as a separate object, or select {o} to merge it."
 msgstr ""
 
 #: src/log/reportBundle.ts

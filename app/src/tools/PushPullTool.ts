@@ -38,6 +38,7 @@ import { defaultFaceEligible, ineligibleFaceHint, sessionIsOpen, worldFaceNormal
 import { ctxOfFace, ctxOfSketch, readPlaneUnits, type PlaneUnitsScene } from './planeUnits'
 import { pickPolicyGeneration, pickRenderMode } from './pickPolicy'
 import { regionUnderRay } from './regionPick'
+import { filamentDifference, type FilamentDifference } from '../borpa/objectFilament'
 
 /** Snap kinds whose point is a deliberate depth reference for push/pull — the
  * cursor was parked on a real feature. `on-face` is excluded on purpose: it
@@ -261,6 +262,14 @@ export class PushPullTool implements Tool {
       // same line the refused click toasts, shown BEFORE the click, in the
       // status bar and (`hoverHint`) beside the cursor.
       if (this._hoverRefusal !== null) return this._hoverRefusal
+      const hovered = this._hoverTarget
+      const foreign = hovered?.kind === 'face' && !this._makesNewObject() ? filamentDifference(this.wasmScene, hovered.object, { face: hovered.face, instance: hovered.instance }) : null
+      if (foreign !== null) {
+        const { object: faceFilament, selected } = foreign
+        return this._activeComponent === null
+          ? t`This face is ${faceFilament}: pulling it out makes a new ${selected} object, pushing it in cuts it.`
+          : t`This face is ${faceFilament}: pushing it in cuts it, but it can't be pulled out in ${selected} here.`
+      }
       if (this.retype.isOpen) {
         return t`Type an exact distance to redo the push/pull you just made — or click another face; double-click repeats the last distance.`
       }
@@ -270,6 +279,13 @@ export class PushPullTool implements Tool {
     }
     if (this._latchedNewObject()) {
       return t`This face is locked, so this makes a NEW object. Move to extrude, click to commit — or type an exact distance.`
+    }
+    const pulled = this._pullsOutOfOtherFilament()
+    if (pulled !== null) {
+      const { object: faceFilament, selected } = pulled
+      return this._activeComponent === null
+        ? t`Pulls out a new ${selected} object: this face is ${faceFilament}. Click to commit — or type an exact distance.`
+        : t`This face is ${faceFilament}, so it can't be pulled out in ${selected} here. Push it in to cut, select ${faceFilament}, or close the component to pull out a new object.`
     }
     return this.extrudeAsNewMode
       ? t`Move to extrude a NEW object, click to commit — or type an exact distance. Tap Ctrl to push/pull instead.`
@@ -533,6 +549,42 @@ export class PushPullTool implements Tool {
   private _makesNewObject(): boolean {
     return this.extrudeAsNewMode && this._activeComponent === null
   }
+
+  /**
+   * Borpa (borpa/objectFilament.ts): a face commit at `distance` would add
+   * material to an Object made of another filament than the selected one.
+   * Pulling out of the face adds; so does any push or pull of a lone flat
+   * sheet, which has no material to cut. A plain Push/Pull is then a new
+   * Object instead (`_commit`), and inside a component, where none can be
+   * made, the kernel call is refused (borpa/filamentRules.ts). Null on a
+   * bare Scene, with no filament selected, or for a push into a solid.
+   */
+  private _addsToOtherFilament(target: PushPullTarget, distance: number): FilamentDifference | null {
+    if (target.kind !== 'face' || distance === 0) return null
+    const difference = filamentDifference(this.wasmScene, target.objectHandle, { face: target.faceHandle, instance: target.instance })
+    if (difference === null) return null
+    return distance > 0 || this._isFlatSheetNow(target.objectHandle) ? difference : null
+  }
+
+  /** `_addsToOtherFilament` for the drag in progress, unless the Ctrl mode or
+   *  a locked face already makes it a new object. */
+  private _pullsOutOfOtherFilament(): FilamentDifference | null {
+    if (this.stage.kind !== 'dragging' || this._makesNewObject() || this._latchedNewObject()) return null
+    return this._addsToOtherFilament(this.stage.target, this.stage.distance)
+  }
+
+  /** `_isFlatSheet`, remembered per Object until the document changes: the
+   *  ghost asks on every move. */
+  private _isFlatSheetNow(object: bigint): boolean {
+    const generation = this.wasmScene.history_generation()
+    const held = this._sheetMemo
+    if (held !== null && held.object === object && held.generation === generation) return held.sheet
+    const sheet = this._isFlatSheet(object)
+    this._sheetMemo = { object, generation, sheet }
+    return sheet
+  }
+
+  private _sheetMemo: { object: bigint; generation: bigint; sheet: boolean } | null = null
 
   private _computeIdleTarget(ray: Ray, activeInstance: bigint | null): IdleTarget | null {
     // Path A's pick, memoized per ray by `FacePickCache` (faceDraw.ts, same
@@ -1325,7 +1377,13 @@ export class PushPullTool implements Tool {
               distance,
             )
         this.onCommit(objectId)
-      } else if (this._makesNewObject() || target.newObjectOnly === true) {
+      } else if (
+        this._makesNewObject() ||
+        target.newObjectOnly === true ||
+        // Borpa: building off a face of another filament makes a separate
+        // Object in the selected one; pushing in stays a plain cut.
+        (this._activeComponent === null && this._addsToOtherFilament(target, distance) !== null)
+      ) {
         // Ctrl/Cmd modifier (design tool-parity §2): extrude a NEW
         // coincident object from the clicked face instead of pushing/
         // pulling the source — SketchUp's "leave original face". Not
@@ -1430,7 +1488,12 @@ export class PushPullTool implements Tool {
    *  Inside a component edit the Ctrl toggle's commit falls back to an
    *  ordinary push (see `_commit`), so the ghost stays on the push colors. */
   private _ghostMakesNewObject(): boolean {
-    return this._makesNewObject() || this._latchedNewObject() || (this.stage.kind === 'dragging' && this.stage.target.kind === 'region')
+    return (
+      this._makesNewObject() ||
+      this._latchedNewObject() ||
+      (this.stage.kind === 'dragging' && this.stage.target.kind === 'region') ||
+      (this._activeComponent === null && this._pullsOutOfOtherFilament() !== null)
+    )
   }
 
   private _drawGhostPreview(

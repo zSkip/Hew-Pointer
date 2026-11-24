@@ -150,6 +150,27 @@ export function readFilamentLinks(scene: ApiScene): Map<bigint, FilamentLink> {
   })
 }
 
+/**
+ * Each Object's base material (`material_default`) as a palette handle, or
+ * null when it has none. Objects the API cannot name are left out. One API
+ * connection for the whole list.
+ */
+export function readBaseMaterials(scene: ApiScene, objects: readonly bigint[]): Map<bigint, bigint | null> {
+  const out = new Map<bigint, bigint | null>()
+  if (objects.length === 0) return out
+  return withApi(scene, (api) => {
+    const handleOf = new Map([...materialPublicIds(api, scene)].map(([handle, id]) => [id, handle]))
+    const publicIds = scene.object_public_ids(BigUint64Array.from(objects))
+    objects.forEach((object, i) => {
+      const id = publicIds[i]
+      if (!id) return
+      const info = api.send('hew.query.entity', { id }) as { material_default?: unknown }
+      out.set(object, typeof info.material_default === 'string' ? handleOf.get(info.material_default) ?? null : null)
+    })
+    return out
+  })
+}
+
 /** The filament of `list` a link stands for: by preset name, else by type. */
 export function filamentForLink(link: FilamentLink, list: readonly Filament[]): Filament | null {
   return list.find((f) => f.name === link.preset) ?? list.find((f) => f.type !== '' && f.type === link.type) ?? null

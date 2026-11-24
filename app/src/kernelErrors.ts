@@ -605,12 +605,23 @@ export function parseKernelErrorCode(err: unknown): string | null {
 }
 
 /**
+ * App-side refusals thrown as `"<code>: <message>"` whose message is already
+ * written for people, naming what only the moment knows (Borpa's filament
+ * refusals name the filaments, borpa/filamentRules.ts). Shown as they are.
+ */
+// oxlint-disable-next-line lingui/no-unlocalized-strings -- error codes, not copy
+export const PLAIN_MESSAGE_CODES: ReadonlySet<string> = new Set(['FilamentMismatch'])
+
+/**
  * Plain-language copy (what happened + suggested next step) for a kernel
  * error code. An unmapped code — a new kernel error the table hasn't caught
  * up with, kept from ever being a user's problem by the exhaustiveness
  * test — still gets a plain sentence, with the code kept for Report Bug.
  */
 export function kernelErrorMessage(code: string, rawMsg: string): string {
+  // An app-side refusal that names things only known when it happens: its
+  // own text is the message, with or without the code in front.
+  if (PLAIN_MESSAGE_CODES.has(code)) return rawMsg.startsWith(`${code}: `) ? rawMsg.slice(code.length + 2) : rawMsg
   // Without the Remove degenerate faces preview (the Preview wall) the
   // boolean refusal cannot point at it.
   if (code === 'DegenerateInput' && !behaviorEnabled('health-remove-degenerate')) {
