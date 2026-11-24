@@ -1434,9 +1434,12 @@ silently written as a healthy-looking free anchor.
 
 `detached` (`bool`, default `false`, omitted when `false`) marks an
 annotation whose anchored node was deleted or consumed (by a boolean,
-slice, push-through, or an equivalent operand-consuming op), or whose
+slice, push-through, or an equivalent operand-consuming op), whose
 captured `curve` couldn't survive a non-similarity transform on its node (a
-squashed circle has no valid radius) — kept, not deleted, and rendered in a
+squashed circle has no valid radius), or whose anchor a push/pull of its
+object left off the object's surface (the push removed the material the
+anchor sat on, or reshaped its face without translating it) — kept, not
+deleted, and rendered in a
 warning color rather than silently showing stale geometry. It is
 **stored**, not re-derived on load: the kernel decides it at the moment of
 the mutation that caused it (an event the file's post-mutation state alone

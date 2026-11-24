@@ -15,9 +15,12 @@
 //! use **geometric re-anchoring** instead (approved design, see the design
 //! doc's "Associativity" section): [`crate::document::Document`] carries an
 //! anchor's point through the exact world-space map of a rigid/affine bake
-//! or instance-pose change on its node (`Document::reanchor_touched`), and
+//! or instance-pose change on its node (`Document::reanchor_touched`) and,
+//! for the anchors lying on a pushed or pulled face, through that face's
+//! translation (the face follow, `document/annotation_follow.rs`). It
 //! flags an annotation `detached` when its node is deleted or consumed
-//! (`Document::reevaluate_liveness_recorded`), when a captured
+//! (`Document::reevaluate_liveness_recorded`), when a push/pull leaves one
+//! of its anchors off its object's surface (the face follow), when a captured
 //! [`Annotation::RadialDimension`] circle can't survive a non-similarity
 //! map, or when a [`Annotation::LinearDimension`] with only one anchor
 //! riding the touched transform can't re-derive a sane placement (its two
@@ -200,7 +203,27 @@ impl Annotation {
         touched: &[NodeId],
         t: &crate::transform::Transform,
     ) -> Option<bool> {
-        let on = |n: Option<NodeId>| n.is_some_and(|n| touched.contains(&n));
+        self.carry_anchors(
+            &|anchor: &Anchor| anchor.node.is_some_and(|n| touched.contains(&n)),
+            t,
+        )
+    }
+
+    /// [`Annotation::reanchor`] with the moving anchors chosen one by one:
+    /// every anchor for which `moves` answers `true` is carried through `t`,
+    /// the others keep their points. A whole-node transform moves every
+    /// anchor on the node ([`Annotation::reanchor`]); a face move moves only
+    /// the anchors lying on that face (`Document`'s face follow, the
+    /// `annotation_follow` module), each by the face's translation. Same
+    /// return contract and the same "frozen but coherent" posture as
+    /// [`Annotation::reanchor`]: `None` when no anchor moves, `Some(false)`
+    /// with the record left exactly as it was when it cannot be carried.
+    pub(crate) fn carry_anchors(
+        &mut self,
+        moves: &dyn Fn(&Anchor) -> bool,
+        t: &crate::transform::Transform,
+    ) -> Option<bool> {
+        let on = |anchor: &Anchor| moves(anchor);
         match self {
             Annotation::LinearDimension {
                 a,
@@ -209,7 +232,7 @@ impl Annotation {
                 plane,
                 ..
             } => {
-                let (ta, tb) = (on(a.node), on(b.node));
+                let (ta, tb) = (on(a), on(b));
                 if !ta && !tb {
                     return None;
                 }
@@ -280,7 +303,7 @@ impl Annotation {
                 leader_dir,
                 ..
             } => {
-                if !on(anchor.node) {
+                if !on(anchor) {
                     return None;
                 }
                 match t.similarity_scale() {
@@ -308,7 +331,7 @@ impl Annotation {
                 }
             }
             Annotation::LeaderText { anchor, offset, .. } => {
-                if !on(anchor.node) {
+                if !on(anchor) {
                     return None;
                 }
                 anchor.point = t.apply_point(anchor.point);

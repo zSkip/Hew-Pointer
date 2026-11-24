@@ -34,6 +34,7 @@ mod common;
 mod face_arrangement_support;
 mod lock_oracle;
 
+mod annotation_follow_specs;
 mod arc_on_face_specs;
 mod asset_lifecycle_specs;
 mod attr_specs;

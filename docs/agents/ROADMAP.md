@@ -1196,6 +1196,13 @@ below.
   they describe so they follow it through moves, rotations, and scales — a
   transform that would distort a radius detaches the annotation visibly
   instead of reporting a wrong number
+- A Push/Pull carries the dimension and leader anchors that sit on the
+  moved face (its edges and corners included) by the face's translation,
+  in the same undo step, so a dimension keeps measuring the model; one
+  whose anchor the push removes, or reshapes without translating (a
+  cylinder wall's radius, a blend's size), detaches visibly. Top-level
+  objects only; radial dimensions and faces inside components are not
+  carried
 - Annotations save with the document and read at a constant on-screen size,
   staying legible at any zoom
 - Dimension arrowheads are a fixed size on screen tied to the label text

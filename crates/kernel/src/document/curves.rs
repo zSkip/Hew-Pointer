@@ -648,6 +648,15 @@ impl Document {
     ) -> Result<(ReshapeReport, DocChange), DocumentError> {
         self.reshape_target(object)?;
         let out = spec.run(&self.objects[object].object)?;
+        // A Push/Pull carries the annotations on its face with it
+        // (`annotation_follow.rs`), in the same undo step.
+        let follow = match &spec {
+            ReshapeSpec::PushPullBlend(face, distance)
+            | ReshapeSpec::PushPullWithBlends(face, distance) => {
+                self.plan_face_follow(object, *face, *distance)
+            }
+            _ => None,
+        };
         let rec = &mut self.objects[object];
         let before = std::mem::replace(&mut rec.object, out.after);
         let (owner, name, tags) = (rec.owner, rec.name.clone(), rec.tags.clone());
@@ -678,13 +687,17 @@ impl Document {
             }
             split_off.push(id);
         }
-        self.undo.push(DocAction::Reshaped {
-            object,
-            before,
-            spec,
-            split_off: split_off.clone(),
-            parent,
-        });
+        let followups = self.finish_face_follow(follow);
+        self.push_with_followups(
+            DocAction::Reshaped {
+                object,
+                before,
+                spec,
+                split_off: split_off.clone(),
+                parent,
+            },
+            followups,
+        );
         self.commit_new_action();
         self.debug_validate();
         Ok((out.report, self.repair_change(object, &split_off, parent)))

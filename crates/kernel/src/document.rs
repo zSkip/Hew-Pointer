@@ -33,6 +33,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
 
+mod annotation_follow;
 mod cells;
 mod change_sets;
 mod clipboard;
@@ -16258,12 +16259,23 @@ impl Document {
         // A member of a frozen shape is frozen with it (OW-1).
         self.refuse_frozen_object(object)?;
         let ride = self.plan_face_ride(object, &op)?;
+        // Annotations on the pushed face ride with it too
+        // (`annotation_follow.rs`), as followups of the same undo step.
+        let follow = match &op {
+            KernelOp::PushPull { face, distance }
+            | KernelOp::ExtrudeSubFace {
+                sub_face: face,
+                distance,
+            } => self.plan_face_follow(object, *face, *distance),
+            _ => None,
+        };
         let rec = &mut self.objects[object];
         let report = rec
             .history
             .apply(&mut rec.object, op)
             .map_err(DocumentError::Op)?;
-        let (followups, ridden) = self.install_face_ride(object, ride);
+        let (mut followups, ridden) = self.install_face_ride(object, ride);
+        followups.extend(self.finish_face_follow(follow));
         self.push_with_followups(DocAction::ObjectOp { object }, followups);
         self.commit_new_action();
         self.debug_validate();

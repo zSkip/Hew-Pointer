@@ -168,23 +168,32 @@ impl Document {
     ///   becomes a boss or recess ([`KernelOp::ExtrudeSubFace`]), any other
     ///   face is translated ([`KernelOp::PushPull`]). The distance is signed
     ///   so the moved end travels `d · delta` (for `b`) or `−d · delta`
-    ///   (for `a`), and the dimension's anchor moves by exactly that.
+    ///   (for `a`). The dimension's anchor rides with the face, as every
+    ///   annotation on a pushed face does (`annotation_follow.rs`): by the
+    ///   face's translation, which is `d · delta` up to the
+    ///   [`tol::NORMAL_DIRECTION`] by which the face's normal may differ
+    ///   from `d`.
     ///   "Flat" excludes blend faces and facets of an analytic surface (a
     ///   cylinder wall's Push/Pull changes its radius, it does not translate
     ///   the facet).
     ///
     /// In every case the dimension's `text_override` is cleared, so its
-    /// label shows the measured value again; its `offset` and `plane` are
-    /// kept (both stay valid: the drive moves an end along the dimension's
-    /// own line). When the dimension already measures `length` within
+    /// label shows the measured value again. Its `offset` and `plane` come
+    /// from the move's own re-anchoring, the one every annotation on the
+    /// moved geometry gets: a face move keeps them verbatim (it moves an end
+    /// along the dimension's own line), a whole-object move carries them as
+    /// any Move does. Should the move leave the
+    /// dimension unable to follow, that re-anchoring freezes it and marks
+    /// it `detached`, and its override is kept (a plain translate never
+    /// does this: the other end lies outside the swept slab). When the
+    /// dimension already measures `length` within
     /// [`tol::POINT_MERGE`], no geometry moves; the override is cleared if
     /// there was one (one undo entry), and nothing at all is recorded when
     /// there was none. The end and face are still resolved first, so a
     /// dimension that could not be driven refuses even then.
     ///
-    /// Scope: world objects only. Other annotations anchored to a moved
-    /// face are not carried by a face move (only a whole-object move
-    /// carries them).
+    /// Scope: world objects only. Every other annotation anchored to the
+    /// moved face or object rides along too, in the same undo entry.
     ///
     /// # Errors
     /// Refusals are checked before anything changes, and the geometry step
@@ -262,23 +271,6 @@ impl Document {
             }
         };
         let end = plan.map_or(DimensionEnd::B, |p| p.end);
-
-        let (new_a, new_b) = match end {
-            DimensionEnd::B => (
-                a,
-                Anchor {
-                    point: b.point + dir * delta,
-                    ..b
-                },
-            ),
-            DimensionEnd::A => (
-                Anchor {
-                    point: a.point - dir * delta,
-                    ..a
-                },
-                b,
-            ),
-        };
         let unchanged = delta.abs() <= tol::POINT_MERGE;
         if unchanged && text_override.is_none() {
             let moved = DimensionDriveMove::Nothing;
@@ -316,24 +308,23 @@ impl Document {
             }
         };
 
-        // The dimension follows exactly: the moved end by the drive, the
-        // label back to the measured value. A whole-object move has already
-        // carried `b` through the same translation (re-deriving `offset` and
-        // `plane`, which a move along the dimension's own line leaves as
-        // they were); the exact values written here agree with it.
-        let Annotation::LinearDimension { offset, plane, .. } =
-            self.annotations[id].annotation.clone()
-        else {
-            unreachable!("a drive never changes the annotation's kind");
-        };
-        let new = Annotation::LinearDimension {
-            a: new_a,
-            b: new_b,
-            offset,
-            plane,
-            text_override: None,
-        };
-        if new != self.annotations[id].annotation {
+        // The move has already carried the dimension, the way it carries
+        // every annotation on the moved geometry: a face move through the
+        // face follow (`annotation_follow.rs`), a whole-object move through
+        // `reanchor_touched`. What is left is the label: back to the
+        // measured value. A dimension the move could not carry is frozen
+        // and `detached`, and stays exactly so.
+        let rec = &self.annotations[id];
+        if let Annotation::LinearDimension {
+            text_override: Some(_),
+            ..
+        } = &rec.annotation
+            && !rec.detached
+        {
+            let mut new = rec.annotation.clone();
+            if let Annotation::LinearDimension { text_override, .. } = &mut new {
+                *text_override = None;
+            }
             self.update_annotation(id, new)
                 .expect("the annotation is live and the kind is unchanged");
         }
@@ -372,11 +363,7 @@ impl Document {
                     ));
                 }
                 let object = &self.objects[o].object;
-                let on_surface = object
-                    .faces()
-                    .keys()
-                    .any(|f| face_holds_point(object, f, anchor.point));
-                if !on_surface {
+                if !super::annotation_follow::lies_on_surface(object, anchor.point) {
                     return Err(DocumentError::DimensionDrive(
                         DimensionDriveError::AnchorOffGeometry,
                     ));
@@ -479,17 +466,5 @@ impl Document {
 /// on one of its loops within [`tol::POINT_MERGE`] (an anchor snapped to an
 /// edge or a corner lies on every face meeting there).
 fn face_holds_point(object: &Object, face: FaceId, point: Point3) -> bool {
-    let Some(f) = object.faces().get(face) else {
-        return false;
-    };
-    if f.plane.signed_distance(point).abs() > tol::PLANE_DIST {
-        return false;
-    }
-    let outer: Vec<Point3> = object.loop_positions(f.outer_loop).collect();
-    let holes: Vec<Vec<Point3>> = f
-        .inner_loops
-        .iter()
-        .map(|&l| object.loop_positions(l).collect())
-        .collect();
-    crate::geom2d::point_on_region(point, &outer, &holes, f.plane.normal())
+    super::annotation_follow::FaceRegion::of(object, face).is_some_and(|r| r.holds(point))
 }
