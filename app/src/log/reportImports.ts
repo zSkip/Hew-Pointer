@@ -19,6 +19,7 @@
  */
 
 import { t } from '@lingui/core/macro'
+import { isBorpa } from '../borpa/host'
 
 export interface ImportedFile {
   /** The recorded method, e.g. `import_skp`. */
@@ -81,7 +82,7 @@ const FILE_CALLS: Record<string, { key: string; label: string }> = {
   load: {
     key: 'bytes',
     get label() {
-      return t`Opened model (.hew)`
+      return isBorpa ? t`Opened model` : t`Opened model (.hew)`
     },
   },
 }

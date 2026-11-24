@@ -35,8 +35,9 @@ export const SKP_STREAM_FORMATS = [
 export type SkpStreamFormat = (typeof SKP_STREAM_FORMATS)[number]
 
 /** Every extension Hew opens or imports; stripped from a name before a new
- * one is appended (`Model.skp` suggests `Model`, never `Model.skp.hew`). */
-const KNOWN_EXTENSION = /\.(hew|skp|dae|stl|glb|gltf)$/i
+ * one is appended (`Model.skp` suggests `Model`, never `Model.skp.hew`).
+ * `.3mf` is the document file inside Borpa (borpa/borpaFileHost.ts). */
+const KNOWN_EXTENSION = /\.(hew|skp|dae|stl|glb|gltf|3mf)$/i
 
 /** `Model.skp` -> `Model`. Only one trailing known extension is removed. */
 export function stripKnownExtension(name: string): string {

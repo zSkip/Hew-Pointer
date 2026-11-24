@@ -23,6 +23,7 @@ import { t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useEffect, useCallback, type MouseEvent } from 'react'
 import { isTauri } from '../io/fileHost'
+import { isBorpa } from '../borpa/host'
 import type { RecentEntry } from '../io/recents'
 import { formatRelativeTime } from '../io/relativeTime'
 import { LENGTH_FORMAT_OPTIONS, type LengthFormat } from '../settings/units'
@@ -561,7 +562,11 @@ export function WelcomeScreen({
             <button className="hw-welcome__card" onClick={onOpen}>
               <Trans>Open a file…</Trans>
               <span className="hw-welcome__card-desc">
-                <Trans>.hew, or import SketchUp, COLLADA, glTF, or STL.</Trans>
+                {isBorpa ? (
+                  <Trans>A 3MF saved by Borpa, or import SketchUp, COLLADA, glTF, or STL.</Trans>
+                ) : (
+                  <Trans>.hew, or import SketchUp, COLLADA, glTF, or STL.</Trans>
+                )}
               </span>
             </button>
           </div>

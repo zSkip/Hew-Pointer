@@ -175,6 +175,7 @@ import { TextDialog, type TextDialogResult } from './panels/TextDialog'
 import { layoutGlyphRun } from './text/glyphRun'
 import { collectNonSolidObjects } from './io/solidGating'
 import { installBorpaBridge, isBorpa } from './borpa/host'
+import { documentBytesFromFile, makeBorpaFileHost } from './borpa/documentPackage'
 import { assignFilament, filamentForLink, readFilamentLinks } from './borpa/buildMaterial'
 import { ASSIGN_FILAMENT_LABEL, flattenDocument, withBuildFilament } from './borpa/filamentScene'
 import { getFilamentState, selectFilament, subscribeFilaments, type Filament } from './borpa/filaments'
@@ -1173,7 +1174,8 @@ export default function App() {
   // Bytes of a fresh blank scene, captured once after kernel load, used for New.
   const blankBytesRef = useRef<Uint8Array | null>(null)
   // Stable file host instance.
-  const fileHostRef = useRef(makeFileHost())
+  // Inside Borpa documents are saved as 3MF files (borpa/borpaFileHost.ts).
+  const fileHostRef = useRef<FileHost>(isBorpa ? makeBorpaFileHost() : makeFileHost())
   // The path the native save panel picked for the export under way, which
   // the export writes to instead of asking again (`writeExport`); the last
   // format exported, which the next Export opens on.
@@ -4080,8 +4082,9 @@ export default function App() {
         return
       }
 
-      // A `.skp` picked through Open becomes the document's own file.
-      if (pick.kind === 'skp') {
+      // A `.skp` picked through Open becomes the document's own file —
+      // except inside Borpa, which saves only 3MF: there it is imported.
+      if (pick.kind === 'skp' && !isBorpa) {
         await runOpenSkp(scene, { name: pick.name, bytes: pick.bytes, handle: pick.handle ?? null })
         return
       }
@@ -4376,7 +4379,10 @@ export default function App() {
     let format: DocFormat
     let compat = false
     let target: string | null = null
-    if (hasNativeSavePanel() && fileHostRef.current.writeTo !== undefined) {
+    if (isBorpa) {
+      // Borpa saves one format, a 3MF with the model inside: nothing to choose.
+      format = 'hew'
+    } else if (hasNativeSavePanel() && fileHostRef.current.writeTo !== undefined) {
       try {
         const name = nameForFormat(documentName(docSessionRef.current), initial)
         const pick = await pickSaveTarget(t`Save As`, name, savePanelFormats(initial, skpCompatRef.current), panelIdFor(initial))
@@ -4595,6 +4601,8 @@ export default function App() {
         }
         bytes = new Uint8Array(await (await handle.getFile()).arrayBuffer())
       }
+      // Borpa's file is a 3MF carrying the document.
+      if (isBorpa) bytes = documentBytesFromFile(bytes, ref.name)
     } catch (err: unknown) {
       const message = friendlyErrorText(err)
       handleToast(t`Revert failed: ${message}`)
@@ -7889,6 +7897,35 @@ export default function App() {
       }
       return
     }
+    if (isBorpa && /\.(skp|3mf)$/i.test(file.name)) {
+      // Inside Borpa (which saves only 3MF) a dropped `.skp` is imported and
+      // a dropped `.3mf` opens the model it carries, keeping its handle (as
+      // the `.skp` drop below does) so Save writes back in place.
+      const item = ev.dataTransfer.items?.[0] as
+        | (DataTransferItem & { getAsFileSystemHandle?: () => Promise<FileSystemHandle | null> })
+        | undefined
+      const handlePromise = item?.getAsFileSystemHandle?.() ?? Promise.resolve(null)
+      if (!(await confirmDiscard())) return
+      const scene = sceneRef.current
+      if (scene === null) return
+      try {
+        const bytes = new Uint8Array(await file.arrayBuffer())
+        if (/\.skp$/i.test(file.name)) {
+          await runImportPick(scene, { kind: 'skp', name: file.name, bytes })
+          return
+        }
+        const dropped = await handlePromise.catch(() => null)
+        const handle = dropped !== null && dropped.kind === 'file' ? dropped : null
+        const discardsUnsaved = docSessionRef.current.dirty
+        if (applyLoadedBytes(documentBytesFromFile(bytes, file.name), { name: file.name, label: OPEN_FILE_LABELS.hew })) {
+          setDocSession(afterOpen({ name: file.name, format: 'hew', handle }, Date.now()))
+          if (discardsUnsaved) void clearRecoverySnapshot()
+        }
+      } catch (err: unknown) {
+        handleToast(t`Drop open failed: ${ph({ reason: friendlyErrorText(err) })}`)
+      }
+      return
+    }
     if (/\.skp$/i.test(file.name)) {
       // A dropped `.skp` opens as the document's own file. The File System
       // Access handle (Chromium) must be requested synchronously — a
@@ -7923,7 +7960,7 @@ export default function App() {
     }).catch((err: unknown) => {
       handleToast(t`Drop open failed: ${ph({ reason: friendlyErrorText(err) })}`)
     })
-  }, [confirmDiscard, applyLoadedBytes, handleToast, clearRecoverySnapshot, runOpenSkp, startImagePlacement, t])
+  }, [confirmDiscard, applyLoadedBytes, handleToast, clearRecoverySnapshot, runOpenSkp, runImportPick, startImagePlacement, t])
 
   // ── Hide/Show + Tags (must be declared BEFORE the early returns below so the
   // hook count is stable across the loading and loaded renders — Rules of Hooks).

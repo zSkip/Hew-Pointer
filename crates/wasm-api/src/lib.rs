@@ -1311,6 +1311,41 @@ pub fn read_item_asset(bytes: &[u8], path: &str) -> Result<Vec<u8>, JsError> {
     kernel::read_item_asset(bytes, path).map_err(|e| JsError::new(&api_err(&e, &e).0))
 }
 
+// ------------------------------------------------- document inside a 3MF
+// Free functions over document bytes (what `Scene::save` returns and
+// `Scene::load` takes), independent of any live Scene: an embedding host
+// (Borpa) saves its documents as a 3MF any slicer opens, with the document
+// carried inside (`mesh_export::export_3mf_with_document`), and reads them
+// back out.
+
+/// A 3MF of the document in `document_bytes`, carrying those exact bytes
+/// as its editable model (`mesh_export::export_3mf_with_document`). The
+/// mesh is what `Scene::export("3mf", 0)` writes for that document
+/// (stored facets, non-solids included, no cages); a document with nothing
+/// to mesh still saves. Throws the typed load error (`NotAContainer`,
+/// `Incomplete`, …) when `document_bytes` is not a document, or
+/// `export_failed` when meshing refuses.
+#[wasm_bindgen]
+pub fn document_to_3mf(document_bytes: &[u8]) -> Result<Vec<u8>, JsError> {
+    let doc =
+        Document::load(document_bytes).map_err(|e: LoadError| JsError::new(&api_err(&e, &e).0))?;
+    mesh_export::export_3mf_with_document(&doc, 0, false, false, document_bytes)
+        .map_err(|e| JsError::new(&format!("{}: {}", e.name(), e.message())))
+}
+
+/// The document bytes a [`document_to_3mf`] package carries, verbatim, or
+/// `undefined` when `bytes` is a 3MF (or any zip) with no editable model
+/// inside. Throws `NotAPackage: …` when `bytes` is not a zip package. Does
+/// not load the document; `Scene::load` does, and reports its own errors.
+#[wasm_bindgen]
+pub fn document_from_3mf(bytes: &[u8]) -> Result<Option<Vec<u8>>, JsError> {
+    match mesh_export::read_embedded_document(bytes) {
+        Ok(document) => Ok(Some(document)),
+        Err(mesh_export::EmbeddedDocumentError::NoEditableModel) => Ok(None),
+        Err(e) => Err(JsError::new(&e.to_string())),
+    }
+}
+
 #[wasm_bindgen]
 impl Scene {
     /// Hidden-line drawing of the visible document from a camera

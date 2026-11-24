@@ -24,6 +24,7 @@ import { i18n } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
 import type { MessageDescriptor } from '@lingui/core'
 import { behaviorEnabled } from './preview'
+import { isBorpa } from './borpa/host'
 import { BLEND_ERRORS } from './kernelErrorCopy/blend'
 import { LOFT_ERRORS } from './kernelErrorCopy/loft'
 import { REVOLVE_ERRORS } from './kernelErrorCopy/revolve'
@@ -478,7 +479,10 @@ const DESCRIPTIONS: Record<string, MessageDescriptor> = {
     msg`That geo-location has a number that isn't finite or a unit size that isn't above zero, so it wasn't set. Fix the value and try again.`,
 
   // ------------------------------------------------------ file loading
-  NotAContainer: msg`This file isn't a Hew document. Pick a .hew file saved by Hew.`,
+  // Inside Borpa documents are 3MF files and `.hew` is never shown.
+  NotAContainer: isBorpa
+    ? msg`This file isn't a model Borpa can open.`
+    : msg`This file isn't a Hew document. Pick a .hew file saved by Hew.`,
   Incomplete:
     msg`This Hew document looks incomplete or damaged. It may not have finished downloading or copying, so get a fresh copy and open that.`,
   UnsupportedVersion: msg`This file needs a newer version of Hew than this one. Update Hew and try again.`,

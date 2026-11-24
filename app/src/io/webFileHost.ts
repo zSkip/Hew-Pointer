@@ -436,7 +436,7 @@ export class WebFileHost implements FileHost {
    * list any still-missing textures). Any other extension throws
    * `UnsupportedFileError`.
    */
-  private async resolveImportPick(bytes: Uint8Array, fileName: string): Promise<ImportPick> {
+  async resolveImportPick(bytes: Uint8Array, fileName: string): Promise<ImportPick> {
     // glTF embeds its own buffers/images — no external resolution needed.
     if (/\.(glb|gltf)$/i.test(fileName)) {
       return { kind: 'gltf', name: fileName, bytes }

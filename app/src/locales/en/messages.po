@@ -1220,6 +1220,14 @@ msgstr "3mf"
 msgid "3MF (.3mf)"
 msgstr "3MF (.3mf)"
 
+#: src/borpa/borpaFileHost.ts
+msgid "3MF model"
+msgstr "3MF model"
+
+#: src/panels/WelcomeScreen.tsx
+msgid "A 3MF saved by Borpa, or import SketchUp, COLLADA, glTF, or STL."
+msgstr "A 3MF saved by Borpa, or import SketchUp, COLLADA, glTF, or STL."
+
 #: src/kernelErrorCopy/blend.ts
 msgid "A bullnose needs two parallel edges of one face."
 msgstr "A bullnose needs two parallel edges of one face."
@@ -1529,6 +1537,7 @@ msgstr "All of them are solid."
 msgid "All release notes ↗"
 msgstr "All release notes ↗"
 
+#: src/borpa/borpaFileHost.ts
 #: src/io/tauriFileHost.ts
 #: src/io/webFileHost.ts
 msgid "All supported files"
@@ -7296,6 +7305,10 @@ msgstr "Open"
 msgid "Open a .hew file from disk."
 msgstr "Open a .hew file from disk."
 
+#: src/palette/registry.ts
+msgid "Open a 3MF saved by Borpa, or import a model."
+msgstr "Open a 3MF saved by Borpa, or import a model."
+
 #: src/panels/LibraryWindow.tsx
 msgid "Open a document window first — library items are placed into a model."
 msgstr "Open a document window first — library items are placed into a model."
@@ -7442,6 +7455,10 @@ msgstr "Open: piece of a split shape"
 #: src/shop/DocumentMenu.tsx
 msgid "Open…"
 msgstr "Open…"
+
+#: src/log/reportImports.ts
+msgid "Opened model"
+msgstr "Opened model"
 
 #: src/log/reportImports.ts
 msgid "Opened model (.hew)"
@@ -10739,6 +10756,10 @@ msgstr "The edge of this opening crosses itself, so one face can't close it. Dra
 msgid "The edges around this opening branch off in more than one direction, so Hew can't tell where a face goes. Fix those edges by hand first."
 msgstr "The edges around this opening branch off in more than one direction, so Hew can't tell where a face goes. Fix those edges by hand first."
 
+#: src/borpa/borpaFileHost.ts
+msgid "The file name must end in .3mf."
+msgstr "The file name must end in .3mf."
+
 #: src/io/webFileHost.ts
 msgid "The file name must end in {ext}."
 msgstr "The file name must end in {ext}."
@@ -11158,6 +11179,10 @@ msgstr "thickness"
 msgid "Thickness"
 msgstr "Thickness"
 
+#: src/borpa/borpaFileHost.ts
+msgid "This 3MF has no editable model inside, so it can't be opened for editing. To print it, load it on the Prepare tab."
+msgstr "This 3MF has no editable model inside, so it can't be opened for editing. To print it, load it on the Prepare tab."
+
 #: src/kernelErrors.ts
 msgid "This attribute value is nested too deeply to store. Flatten it and try again."
 msgstr "This attribute value is nested too deeply to store. Flatten it and try again."
@@ -11291,9 +11316,17 @@ msgstr "This file is damaged and can't be opened."
 msgid "This file is missing some of its data and can't be opened."
 msgstr "This file is missing some of its data and can't be opened."
 
+#: src/borpa/borpaFileHost.ts
+msgid "This file isn't a 3MF that Borpa can open."
+msgstr "This file isn't a 3MF that Borpa can open."
+
 #: src/kernelErrors.ts
 msgid "This file isn't a Hew document. Pick a .hew file saved by Hew."
 msgstr "This file isn't a Hew document. Pick a .hew file saved by Hew."
+
+#: src/kernelErrors.ts
+msgid "This file isn't a model Borpa can open."
+msgstr "This file isn't a model Borpa can open."
 
 #: src/panels/ImportReportDialog.tsx
 msgid "This file looks incomplete or damaged, so parts of the model may be missing. If it was downloaded or copied, a fresh copy may open whole."

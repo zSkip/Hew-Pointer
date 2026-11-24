@@ -30,6 +30,7 @@
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { curveActionPaletteEntries, deformPaletteEntries, skinPaletteEntry } from './curveEntries'
 import { msg, t } from '@lingui/core/macro'
+import { isBorpa } from '../borpa/host'
 import { MENU } from '../health/healthCopy'
 import { actionOffered } from '../curveActions'
 import { TOOL_REGISTRY, type ToolName } from '../tools/toolRegistry'
@@ -218,7 +219,7 @@ function actionEntries(): PaletteEntry[] {
   return [
     ...curveActionPaletteEntries(),
     { id: 'new', label: t`New`, description: t`Start a new, blank document.`, group: 'Actions' },
-    { id: 'open', label: t`Open…`, description: t`Open a .hew file from disk.`, group: 'Actions' },
+    { id: 'open', label: t`Open…`, description: isBorpa ? t`Open a 3MF saved by Borpa, or import a model.` : t`Open a .hew file from disk.`, group: 'Actions' },
     { id: 'import', label: t`Import…`, description: t`Import a COLLADA (.dae), SketchUp (.skp), glTF, or STL model.`, group: 'Actions', gate: 'canImport' },
     { id: 'import-image', label: t`Import Image…`, description: t`Place a PNG or JPEG picture on a face or the ground.`, group: 'Actions', gate: 'canImport', synonyms: [t`picture`, t`photo`, t`image`, t`reference`, t`place image`, t`png`, t`jpeg`, t`jpg`] },
     { id: 'export', label: t`Export…`, description: t`Export the model as glTF, STL, 3MF, USDZ, or an SVG line drawing — format chosen in the dialog.`, group: 'Actions', synonyms: [t`stl`, t`glb`, t`gltf`, t`3mf`, t`usdz`, t`usd`, t`ar`, t`quick look`, t`3d print`, t`slicer`, t`svg`, t`line drawing`, t`laser`, t`cnc`] },

@@ -92,6 +92,12 @@ use kernel::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Cursor;
 
+mod document_3mf;
+pub use document_3mf::{
+    EMBEDDED_DOCUMENT_CONTENT_TYPE, EMBEDDED_DOCUMENT_PART, EmbeddedDocumentError,
+    export_3mf_with_document, read_embedded_document,
+};
+
 // ----------------------------------------------------------------- errors
 
 /// Typed export failures — this crate has no host of its own to turn

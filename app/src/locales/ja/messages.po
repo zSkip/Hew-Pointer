@@ -1220,6 +1220,14 @@ msgstr ""
 msgid "3MF (.3mf)"
 msgstr ""
 
+#: src/borpa/borpaFileHost.ts
+msgid "3MF model"
+msgstr ""
+
+#: src/panels/WelcomeScreen.tsx
+msgid "A 3MF saved by Borpa, or import SketchUp, COLLADA, glTF, or STL."
+msgstr ""
+
 #: src/kernelErrorCopy/blend.ts
 msgid "A bullnose needs two parallel edges of one face."
 msgstr ""
@@ -1529,6 +1537,7 @@ msgstr ""
 msgid "All release notes ↗"
 msgstr ""
 
+#: src/borpa/borpaFileHost.ts
 #: src/io/tauriFileHost.ts
 #: src/io/webFileHost.ts
 msgid "All supported files"
@@ -7290,6 +7299,10 @@ msgstr ""
 msgid "Open a .hew file from disk."
 msgstr ""
 
+#: src/palette/registry.ts
+msgid "Open a 3MF saved by Borpa, or import a model."
+msgstr ""
+
 #: src/panels/LibraryWindow.tsx
 msgid "Open a document window first — library items are placed into a model."
 msgstr ""
@@ -7435,6 +7448,10 @@ msgstr ""
 #: src/panels/MenuBar.tsx
 #: src/shop/DocumentMenu.tsx
 msgid "Open…"
+msgstr ""
+
+#: src/log/reportImports.ts
+msgid "Opened model"
 msgstr ""
 
 #: src/log/reportImports.ts
@@ -10733,6 +10750,10 @@ msgstr ""
 msgid "The edges around this opening branch off in more than one direction, so Hew can't tell where a face goes. Fix those edges by hand first."
 msgstr ""
 
+#: src/borpa/borpaFileHost.ts
+msgid "The file name must end in .3mf."
+msgstr ""
+
 #: src/io/webFileHost.ts
 msgid "The file name must end in {ext}."
 msgstr ""
@@ -11146,6 +11167,10 @@ msgstr ""
 msgid "Thickness"
 msgstr ""
 
+#: src/borpa/borpaFileHost.ts
+msgid "This 3MF has no editable model inside, so it can't be opened for editing. To print it, load it on the Prepare tab."
+msgstr ""
+
 #: src/kernelErrors.ts
 msgid "This attribute value is nested too deeply to store. Flatten it and try again."
 msgstr ""
@@ -11279,8 +11304,16 @@ msgstr ""
 msgid "This file is missing some of its data and can't be opened."
 msgstr ""
 
+#: src/borpa/borpaFileHost.ts
+msgid "This file isn't a 3MF that Borpa can open."
+msgstr ""
+
 #: src/kernelErrors.ts
 msgid "This file isn't a Hew document. Pick a .hew file saved by Hew."
+msgstr ""
+
+#: src/kernelErrors.ts
+msgid "This file isn't a model Borpa can open."
 msgstr ""
 
 #: src/panels/ImportReportDialog.tsx
