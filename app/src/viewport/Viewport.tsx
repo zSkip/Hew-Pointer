@@ -235,6 +235,7 @@ import {
   detectRenderProfile,
   shouldShowSoftwareNotice,
 } from './gpuCapability'
+import { simLayer } from '../borpa/sim/simLayer'
 
 /**
  * Centered message overlay shown over the viewport when the WebGL2 context is
@@ -3267,6 +3268,17 @@ export default function Viewport({
     // ------------------------------------------------------------------ scene renderer
     const sceneRenderer = new SceneRenderer(threeScene, wasmScene)
     sceneRendererRef.current = sceneRenderer
+    // Borpa's Sim tab draws its study marks and results here, and reads
+    // left clicks while the page is in simulation mode (borpa/sim/simLayer.ts).
+    const detachSimLayer = simLayer.attach({
+      scene: threeScene,
+      objectGroup: (id) => sceneRenderer.getObjectGroup(id),
+      wasmScene,
+      element: el,
+      canvas: renderer.domElement,
+      rayAt: (x, y) => rayAtCanvasPoint(x, y),
+      requestRender: () => scheduleRenderRef.current(),
+    })
     // A selected thing that is locked (or sits inside something locked)
     // draws its edges red instead of orange.
     sceneRenderer.setFrozenResolver((kind, id) => {
@@ -10641,6 +10653,7 @@ export default function Viewport({
         // own per-frame hooks above, so a ghost they moved is mirrored where
         // it is now.
         siblingPreview.sync()
+        simLayer.beforeRender()
         const statsActive = isRenderStatsActive()
         const renderStart = statsActive ? performance.now() : 0
         renderer.render(threeScene, camera)
@@ -13128,6 +13141,7 @@ export default function Viewport({
       drawPlaneCueLayer.clear()
       faceCueLayer.clear()
       siblingPreview.end()
+      detachSimLayer()
       sceneRenderer.dispose()
       toolControllerRef.current = null
       switchToolRef.current = null

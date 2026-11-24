@@ -179,6 +179,8 @@ import { documentBytesFromFile, makeBorpaFileHost } from './borpa/documentPackag
 import { assignFilament, filamentForLink, readFilamentLinks } from './borpa/buildMaterial'
 import { ASSIGN_FILAMENT_LABEL, flattenDocument, withBuildFilament } from './borpa/filamentScene'
 import { getFilamentState, selectFilament, subscribeFilaments, type Filament } from './borpa/filaments'
+import { getSimBridgeState, subscribeSimBridge } from './borpa/sim/simBridge'
+import { SimPanel } from './borpa/sim/SimPanel'
 import { friendlyErrorText, isErrorLevelCode, kernelErrorMessage, parseKernelErrorCode } from './kernelErrors'
 import { CommandPalette } from './palette/CommandPalette'
 import { toolHint, toolActionId, type PaletteEntry } from './palette/registry'
@@ -614,6 +616,13 @@ function InferenceOverlays({ store, detailFor }: {
   )
 }
 
+/** In Borpa's Sim tab only Select and the camera tools can be active: the
+ *  modelling tools are put away (borpa/sim/simBridge.ts). */
+function simModeTool(name: ToolName): ToolName {
+  // oxlint-disable-next-line lingui/no-unlocalized-strings -- tool id
+  return getSimBridgeState().mode === 'sim' && name !== 'Select' && !CAMERA_HANDOFF_TOOL_NAMES.has(name) ? 'Select' : name
+}
+
 export default function App() {
   const { t, i18n: activeI18n } = useLingui()
   /** Tray section titles: the heading text AND the key `toggleSection` uses
@@ -678,8 +687,14 @@ export default function App() {
    * build withholds becomes Select (src/preview), so no path (a library
    * action, a stale id, a restored state) can arm it. */
   const setActiveTool = useCallback((next: ToolName | ((prev: ToolName) => ToolName)) => {
-    setActiveToolState((prev) => usableTool(typeof next === 'function' ? next(prev) : next))
+    setActiveToolState((prev) => simModeTool(usableTool(typeof next === 'function' ? next(prev) : next)))
   }, [])
+  /** Borpa's Sim tab (borpa/sim/simBridge.ts): the same document with the
+   *  modelling tools put away; the camera, selection and face picking stay. */
+  const simMode = useSyncExternalStore(subscribeSimBridge, () => getSimBridgeState().mode, () => getSimBridgeState().mode) === 'sim'
+  useEffect(() => {
+    if (simMode) setActiveTool('Select')
+  }, [simMode, setActiveTool])
   /** Which Deform mode (Twist, Bend, Taper, Bend to Path) the next or the running Deform tool is in. */
   const deformMode = useSyncExternalStore(subscribeDeformMode, getDeformMode)
   /** Bumped on every EXPLICIT camera-tool selection (menu/native
@@ -8935,7 +8950,7 @@ export default function App() {
           viewport, and the docked right tray (`06_docked_panels.md`)
           — the app-shell's full 3-column layout (`02_app_shell.md`). */}
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        <ToolRail
+        {!simMode && <ToolRail
           activeTool={activeTool}
           onSelectTool={(name) => activateTool(name)}
           // The resting palette field lives at the top of the rail on every
@@ -8953,7 +8968,7 @@ export default function App() {
           libraryOpen={showLibrary}
           narrow={railNarrow}
           onToggleNarrow={toggleRailNarrow}
-        />
+        />}
         <div
           style={{ flex: 1, minWidth: 0, position: 'relative' }}
           onDragOver={handleDragOver}
@@ -8964,7 +8979,7 @@ export default function App() {
           // of panel content. Clear it on the way out.
           onPointerLeave={() => setInferenceInfo(null)}
         >
-          {trayCollapsed && (
+          {trayCollapsed && !simMode && (
             <TrayShowTab onClick={showTray} focusOnMount={trayToggleTakesFocus} />
           )}
           <Viewport
@@ -9015,7 +9030,7 @@ export default function App() {
           {/* Inference & viewport feedback (`07_inference_feedback.md`)
               — all net-new DOM overlays; Viewport.tsx rendered none of this
               before this milestone. */}
-          <InferenceOverlays store={inferenceStore} detailFor={hoverDetailFor} />
+          {!simMode && <InferenceOverlays store={inferenceStore} detailFor={hoverDetailFor} />}
           {/* The in-viewport annotation text editor (docs/design/
               dimensions-text.md): double-click-to-edit an existing dimension/
               leader, or the Text tool's second click wording a new leader. */}
@@ -9229,7 +9244,7 @@ export default function App() {
               nothing is selected and the cursor is aimed at a sketch region
               — an explicit selection's dock always wins over this hint.
               View ▸ Contextual Dock turns it off entirely. */}
-          {!dockHidden && (
+          {!dockHidden && !simMode && (
           <div style={{ display: 'contents' }} onPointerOver={() => setInferenceInfo(null)}>
             <ContextualDock
               selectedIds={selectedIds}
@@ -9395,7 +9410,29 @@ export default function App() {
         {/* Tray resize handle — drag to adjust the tray width; the width is
             clamped and persisted so complex models' tag/outliner labels can
             be given room once and keep it across launches. */}
-        {!trayCollapsed && (<>
+        {simMode && (
+          <div
+            role="complementary"
+            aria-label={t`Simulation`}
+            style={{
+              width: `${trayWidth}px`,
+              flexShrink: 0,
+              minHeight: 0,
+              background: 'var(--surface-panel)',
+              borderLeft: '1px solid var(--border-hairline)',
+            }}
+          >
+            <SimPanel
+              scene={state.scene}
+              docRev={docRev}
+              selectedObject={selectedIds.find((n) => n.kind === 'object')?.id ?? null}
+              onSelectObject={(id) => handleReplaceSelection([{ kind: 'object', id }])}
+              onDocChanged={() => setDocRev((r) => r + 1)}
+              onToast={handleToast}
+            />
+          </div>
+        )}
+        {!trayCollapsed && !simMode && (<>
         <div
           role="separator"
           aria-orientation="vertical"

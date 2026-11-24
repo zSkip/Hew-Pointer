@@ -46,7 +46,7 @@ export class FilamentApiError extends Error {
 let frameId = 0
 
 /** One API connection, attached to the open document. */
-class Api {
+export class Api {
   private readonly conn: number
 
   constructor(private readonly scene: ApiScene) {
@@ -80,7 +80,7 @@ class Api {
   }
 }
 
-function withApi<T>(scene: ApiScene, body: (api: Api) => T): T {
+export function withApi<T>(scene: ApiScene, body: (api: Api) => T): T {
   const api = new Api(scene)
   try {
     return body(api)
