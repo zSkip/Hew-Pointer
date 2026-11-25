@@ -586,7 +586,10 @@ impl History {
 /// [`tol::POINT_MERGE`] — because floating-point round-trips are not bitwise
 /// (`(p + d) − d ≠ p`; intervening baked transforms round-trip with noise
 /// too). Matching is greedy pairwise for the same reason [`same_position_set`]
-/// is: sort order flips under that noise.
+/// is: sort order flips under that noise. Each live face takes the
+/// lowest-numbered free recorded face that matches; [`RingIndex`] only narrows
+/// which recorded faces are compared (never which one is taken), so a dense
+/// mesh is not compared all against all.
 ///
 /// Memory: every history entry retains one proof — O(total boundary
 /// vertices, outer and hole rings alike) per recorded op. Undo correctness
@@ -694,6 +697,97 @@ fn ring_match_shift(a: &[Point3], b: &[Point3]) -> Option<usize> {
             .enumerate()
             .all(|(i, p)| p.approx_eq(b[(i + shift) % b.len()], tol::POINT_MERGE))
     })
+}
+
+/// Edge length of a [`RingIndex`] cell, in meters: large against
+/// [`tol::POINT_MERGE`], small against the faces of a dense mesh.
+const RING_CELL: f64 = 1e-4;
+
+/// How close to a cell boundary a ring's corner must be for its neighbouring
+/// cell to be searched too. Only needs to exceed [`tol::POINT_MERGE`] plus
+/// rounding; it is kept far larger so no rounding argument is needed.
+const RING_CELL_MARGIN: f64 = RING_CELL / 64.0;
+
+/// Recorded rings bucketed by length and by the cell holding the minimum
+/// corner of their bounding box, so a ring is compared only with recorded
+/// rings that could match it under [`ring_match_shift`].
+///
+/// Completeness: rings that match are the same length, and each point of one
+/// lies within [`tol::POINT_MERGE`] of a point of the other in both directions,
+/// so their per-axis minima differ by at most that tolerance. The minimum is
+/// exact (no arithmetic, unlike a centroid) and the same under rotation.
+/// [`RingIndex::candidates`] searches the corner's own cell and, per axis, the
+/// neighbouring cell whenever the corner lies within [`RING_CELL_MARGIN`] of
+/// that side, so every recorded ring that can match is returned.
+struct RingIndex {
+    /// `((ring length, cell), recorded index)`, sorted.
+    entries: Vec<((usize, [i64; 3]), usize)>,
+}
+
+impl RingIndex {
+    fn new<'a>(rings: impl Iterator<Item = &'a [Point3]>) -> RingIndex {
+        let mut entries: Vec<((usize, [i64; 3]), usize)> = rings
+            .enumerate()
+            .filter_map(|(k, ring)| {
+                ring_min_corner(ring).map(|m| ((ring.len(), m.map(ring_cell)), k))
+            })
+            .collect();
+        entries.sort_unstable();
+        RingIndex { entries }
+    }
+
+    /// Every recorded index whose ring could match `ring` (a superset of the
+    /// matches), in ascending order.
+    fn candidates(&self, ring: &[Point3]) -> Vec<usize> {
+        let Some(m) = ring_min_corner(ring) else {
+            return Vec::new(); // an empty ring matches nothing
+        };
+        let axis_cells = |c: f64| {
+            let mut cells = vec![ring_cell(c)];
+            for neighbour in [
+                ring_cell(c - RING_CELL_MARGIN),
+                ring_cell(c + RING_CELL_MARGIN),
+            ] {
+                if !cells.contains(&neighbour) {
+                    cells.push(neighbour);
+                }
+            }
+            cells
+        };
+        let (xs, ys, zs) = (axis_cells(m[0]), axis_cells(m[1]), axis_cells(m[2]));
+        let mut out = Vec::new();
+        for &x in &xs {
+            for &y in &ys {
+                for &z in &zs {
+                    let key = (ring.len(), [x, y, z]);
+                    let start = self.entries.partition_point(|(k, _)| *k < key);
+                    out.extend(
+                        self.entries[start..]
+                            .iter()
+                            .take_while(|(k, _)| *k == key)
+                            .map(|&(_, i)| i),
+                    );
+                }
+            }
+        }
+        out.sort_unstable();
+        out
+    }
+}
+
+/// The per-axis minimum of `ring`'s points, or `None` for an empty ring.
+fn ring_min_corner(ring: &[Point3]) -> Option<[f64; 3]> {
+    let first = ring.first()?;
+    Some(ring.iter().fold([first.x, first.y, first.z], |m, p| {
+        [m[0].min(p.x), m[1].min(p.y), m[2].min(p.z)]
+    }))
+}
+
+/// The [`RING_CELL`] cell holding coordinate `c`. Monotone in `c` (division
+/// by a positive constant, `floor` and the saturating cast all are), which is
+/// what the neighbour search relies on.
+fn ring_cell(c: f64) -> i64 {
+    (c / RING_CELL).floor() as i64
 }
 
 impl StateProof {
@@ -839,9 +933,11 @@ impl StateProof {
         };
         #[allow(clippy::type_complexity)]
         let mut face_align: Vec<(crate::ids::FaceId, &FaceProof)> = Vec::with_capacity(live.len());
+        let index = RingIndex::new(self.faces.iter().map(|f| f.outer.as_slice()));
         for lf in &live {
             let mut matched = false;
-            for (k, rec) in self.faces.iter().enumerate() {
+            for k in index.candidates(&lf.outer) {
+                let rec = &self.faces[k];
                 if taken[k] || lf.holes.len() != rec.holes.len() {
                     continue;
                 }
@@ -2092,5 +2188,99 @@ mod tests {
             objects_equivalent(&cube, &bossed),
             "redo re-raises the boss"
         );
+    }
+
+    // ------------------------------------------------------------ ring index
+
+    mod ring_index {
+        use super::*;
+        use proptest::prelude::*;
+
+        fn triangle_at(x: f64) -> Vec<Point3> {
+            vec![
+                Point3::new(x, 0.0, 0.0),
+                Point3::new(x + 1.0, 0.0, 0.0),
+                Point3::new(x, 1.0, 0.0),
+            ]
+        }
+
+        #[test]
+        fn candidates_are_the_nearby_rings_of_the_same_length_in_order() {
+            let square = vec![
+                Point3::new(0.0, 0.0, 0.0),
+                Point3::new(1.0, 0.0, 0.0),
+                Point3::new(1.0, 1.0, 0.0),
+                Point3::new(0.0, 1.0, 0.0),
+            ];
+            let recorded = [triangle_at(0.0), triangle_at(5.0), triangle_at(0.0), square];
+            let index = RingIndex::new(recorded.iter().map(|r| r.as_slice()));
+            assert_eq!(index.candidates(&triangle_at(0.0)), vec![0, 2]);
+            assert_eq!(index.candidates(&triangle_at(5.0)), vec![1]);
+            assert!(index.candidates(&triangle_at(9.0)).is_empty());
+            assert!(index.candidates(&[]).is_empty());
+        }
+
+        /// A coordinate `offset` nanometres from a cell boundary, so that
+        /// rings sit on both sides of boundaries and noise carries points
+        /// across them.
+        fn near_boundary(cell: i64, offset: i64) -> f64 {
+            cell as f64 * RING_CELL + offset as f64 * 1e-9
+        }
+
+        proptest! {
+            /// Every recorded ring that matches a live ring under
+            /// `ring_match_shift` is among the live ring's candidates, which
+            /// come in ascending order: the greedy match takes the same face
+            /// with the index as without it.
+            #[test]
+            fn candidates_include_every_match(
+                rings in prop::collection::vec(
+                    prop::collection::vec(
+                        (-2i64..3, -2i64..3, -2i64..3, -3i64..4, -3i64..4, -3i64..4),
+                        3..6,
+                    ),
+                    1..40,
+                ),
+                pick in any::<prop::sample::Index>(),
+                shift in 0usize..6,
+                noise in prop::collection::vec((-0.5f64..0.5, -0.5f64..0.5, -0.5f64..0.5), 6),
+            ) {
+                let recorded: Vec<Vec<Point3>> = rings
+                    .iter()
+                    .map(|r| {
+                        r.iter()
+                            .map(|&(cx, cy, cz, ox, oy, oz)| {
+                                Point3::new(
+                                    near_boundary(cx, ox),
+                                    near_boundary(cy, oy),
+                                    near_boundary(cz, oz),
+                                )
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let index = RingIndex::new(recorded.iter().map(|r| r.as_slice()));
+                // The live ring: a recorded ring, rotated, every point moved by
+                // under POINT_MERGE (at most 0.87 nm).
+                let base = &recorded[pick.index(recorded.len())];
+                let n = base.len();
+                let live: Vec<Point3> = (0..n)
+                    .map(|i| {
+                        let p = base[(i + shift) % n];
+                        let (dx, dy, dz) = noise[i];
+                        Point3::new(p.x + dx * 1e-9, p.y + dy * 1e-9, p.z + dz * 1e-9)
+                    })
+                    .collect();
+                prop_assert!(ring_match_shift(&live, base).is_some());
+
+                let candidates = index.candidates(&live);
+                prop_assert!(candidates.windows(2).all(|w| w[0] < w[1]));
+                for (k, rec) in recorded.iter().enumerate() {
+                    if ring_match_shift(&live, rec).is_some() {
+                        prop_assert!(candidates.contains(&k), "matching ring {} missing", k);
+                    }
+                }
+            }
+        }
     }
 }
