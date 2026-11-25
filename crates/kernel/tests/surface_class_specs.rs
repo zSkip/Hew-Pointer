@@ -363,7 +363,7 @@ fn each_class_maps_under_similarity_and_drops_under_non_uniform_scale() {
         let mut moved = claimed.clone();
         moved.apply_transform(&similarity).unwrap();
         let got = moved.faces()[f]
-            .surface
+            .surface()
             .expect("similarity keeps the claim");
         assert!(got.same_surface(&expected), "{got:?} vs {expected:?}");
         moved.validate().unwrap();
@@ -408,7 +408,7 @@ fn each_class_maps_under_similarity_and_drops_under_non_uniform_scale() {
             .apply_transform(&Transform::scale(Vec3::new(2.0, 1.0, 1.0)))
             .unwrap();
         assert_eq!(
-            stretched.faces()[f].surface,
+            stretched.faces()[f].surface(),
             None,
             "non-uniform scale drops {s:?}"
         );
@@ -448,12 +448,12 @@ fn push_pull_on_a_sphere_facet_takes_the_planar_path_and_drops_its_claim() {
         "a box top translates, no new faces"
     );
     assert_eq!(
-        obj.faces()[top].surface,
+        obj.faces()[top].surface(),
         None,
         "the moved facet drops its claim"
     );
     assert_eq!(
-        obj.faces()[side].surface,
+        obj.faces()[side].surface(),
         Some(side_claim),
         "a stretched neighbour keeps its claim"
     );

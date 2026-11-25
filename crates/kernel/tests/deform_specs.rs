@@ -266,7 +266,7 @@ fn cylinder_twist_drops_claims_keeps_soft() {
     assert!(
         o.faces()
             .values()
-            .any(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+            .any(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
     );
     let d = o
         .deformed(&DeformSpec::Twist {
@@ -277,7 +277,7 @@ fn cylinder_twist_drops_claims_keeps_soft() {
         .unwrap();
     assert_solid(&d);
     assert!(
-        d.faces().values().all(|f| f.surface.is_none()),
+        d.faces().values().all(|f| f.surface().is_none()),
         "claims dropped"
     );
     assert!(d.edge_arc_entries().all(|(_, a)| a.curve.is_none()));
@@ -741,7 +741,7 @@ fn fillet_then_twist_stays_smooth() {
     assert!(
         d.faces()
             .values()
-            .all(|f| f.surface.is_none() && f.blend.is_none()),
+            .all(|f| f.surface().is_none() && f.blend().is_none()),
         "claims and tags dropped"
     );
     // Every former rail and seam is still a soft edge (split at the

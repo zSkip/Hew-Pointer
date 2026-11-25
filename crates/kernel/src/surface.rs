@@ -400,19 +400,19 @@ impl crate::topo::Object {
         // strip's side). A swept strip's flat facets get the wide allowance,
         // a claimed strip the narrow one.
         let strip = |f: &crate::topo::Face| {
-            f.blend.is_some_and(|t| {
+            f.blend().is_some_and(|t| {
                 t.kind == crate::topo::BlendKind::Fillet && t.role == crate::topo::BlendRole::Strip
             })
         };
-        let rail_strip = if strip(fa) && fb.blend.is_none() {
+        let rail_strip = if strip(fa) && fb.blend().is_none() {
             Some(fa)
-        } else if strip(fb) && fa.blend.is_none() {
+        } else if strip(fb) && fa.blend().is_none() {
             Some(fb)
         } else {
             None
         };
         let rail = rail_strip.is_some();
-        match (fa.surface, fb.surface) {
+        match (fa.surface(), fb.surface()) {
             (Some(a), Some(b)) if a.same_surface(&b) => return EdgeSmoothness::Seam,
             (None, None) if e.soft || !rail => return soft(),
             _ => {}
@@ -422,7 +422,7 @@ impl crate::topo::Object {
         };
         let oriented = |f: &crate::topo::Face, x: Point3| -> Vec3 {
             let n = f.plane.normal();
-            match f.surface.and_then(|s| s.normal_at(x)) {
+            match f.surface().and_then(|s| s.normal_at(x)) {
                 Some(a) if a.dot(n) < 0.0 => -a,
                 Some(a) => a,
                 None => n,
@@ -431,7 +431,10 @@ impl crate::topo::Object {
         let within = |x: Point3| (oriented(fa, x) - oriented(fb, x)).length();
         let agree = |bound: f64| within(p) <= bound && within(q) <= bound;
         if e.soft {
-            let one_blend = fa.blend.zip(fb.blend).is_some_and(|(a, b)| a.id == b.id);
+            let one_blend = fa
+                .blend()
+                .zip(fb.blend())
+                .is_some_and(|(a, b)| a.id == b.id);
             return if one_blend && agree(tol::NORMAL_DIRECTION) {
                 EdgeSmoothness::Tangent
             } else {
@@ -441,7 +444,7 @@ impl crate::topo::Object {
         let tangent = match rail_strip {
             _ if agree(tol::NORMAL_DIRECTION) => true,
             None => false,
-            Some(s) if s.surface.is_none() => agree(tol::BLEND_RAIL_NORMAL),
+            Some(s) if s.surface().is_none() => agree(tol::BLEND_RAIL_NORMAL),
             Some(s) => {
                 // Across the edge: the claimed strip against the neighbor's
                 // facet plane, each normal with its along-edge part removed.
@@ -471,7 +474,7 @@ impl crate::topo::Object {
     pub(crate) fn oriented_normal(&self, face: crate::ids::FaceId, p: Point3) -> Option<Vec3> {
         let f = self.faces().get(face)?;
         let n = f.plane.normal();
-        Some(match f.surface.and_then(|s| s.normal_at(p)) {
+        Some(match f.surface().and_then(|s| s.normal_at(p)) {
             Some(a) if a.dot(n) < 0.0 => -a,
             Some(a) => a,
             None => n,
@@ -499,7 +502,7 @@ impl crate::topo::Object {
         let Some(f) = self.faces().get(face) else {
             return Vec::new();
         };
-        let Some(tag) = f.blend else {
+        let Some(tag) = f.blend() else {
             return Vec::new();
         };
         let hes = self.half_edges();
@@ -511,7 +514,7 @@ impl crate::topo::Object {
             if e.crease {
                 return None;
             }
-            match self.faces().get(other)?.blend {
+            match self.faces().get(other)?.blend() {
                 Some(t) if t.id == tag.id => Some(true),
                 Some(_) => None,
                 None => (self.edge_smoothness(edge) != EdgeSmoothness::Hard).then_some(false),

@@ -487,14 +487,16 @@ fn world_circle(
         faces.push(object.loops()[object.half_edges()[t].loop_id].face);
     }
     // Only a cylinder claim has an axis a rim turns about.
-    let cylinder = faces.iter().find_map(|f| match object.faces()[*f].surface {
-        Some(kernel::SurfaceRef::Cylinder {
-            axis_point,
-            axis,
-            radius,
-        }) => Some((axis_point, axis, radius)),
-        _ => None,
-    });
+    let cylinder = faces
+        .iter()
+        .find_map(|f| match object.faces()[*f].surface() {
+            Some(kernel::SurfaceRef::Cylinder {
+                axis_point,
+                axis,
+                radius,
+            }) => Some((axis_point, axis, radius)),
+            _ => None,
+        });
     if let Some(c) = object.edge_curve(edge) {
         let axis = cylinder
             .map(|(_, axis, _)| pose.apply_vector(axis))

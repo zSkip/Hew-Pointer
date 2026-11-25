@@ -805,12 +805,15 @@ impl StateProof {
                         .map(|&il| object.loop_positions(il).collect())
                         .collect(),
                     plane: face.plane,
-                    surface: face.surface,
+                    surface: face.surface(),
                     material: face.material,
-                    back_material: face.back_material,
-                    uv_frame: face.uv_frame,
-                    blend: face.blend,
-                    attrs: object.attr_dict(face.attrs).cloned().unwrap_or_default(),
+                    back_material: face.back_material(),
+                    uv_frame: face.uv_frame(),
+                    blend: face.blend(),
+                    attrs: object
+                        .attr_dict(face.attr_slot())
+                        .cloned()
+                        .unwrap_or_default(),
                 })
                 .collect(),
             edges: object
@@ -1001,11 +1004,11 @@ impl StateProof {
             // Restore the routing-relevant analytic surface too (see FaceProof):
             // the aligned face IS the recorded face, cylinder claim included —
             // and its paint and UV frame.
-            candidate.faces[f].surface = rec.surface;
+            candidate.faces[f].set_surface(rec.surface);
             candidate.faces[f].material = rec.material;
-            candidate.faces[f].back_material = rec.back_material;
-            candidate.faces[f].uv_frame = rec.uv_frame;
-            candidate.faces[f].blend = rec.blend;
+            candidate.faces[f].set_back_material(rec.back_material);
+            candidate.faces[f].set_uv_frame(rec.uv_frame);
+            candidate.faces[f].set_blend(rec.blend);
             candidate.set_face_attrs(f, rec.attrs.clone());
         }
         // Fast path: neither the recorded state nor the candidate carries a

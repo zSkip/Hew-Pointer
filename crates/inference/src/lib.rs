@@ -1533,7 +1533,7 @@ impl DefGeometry {
                 plane: face.plane,
                 boundary,
                 holes,
-                surface_facet: face.surface.is_some(),
+                surface_facet: face.surface().is_some(),
                 face: fid,
             });
         }
@@ -2282,7 +2282,7 @@ impl InferenceScene {
                 plane: world_plane,
                 boundary,
                 holes,
-                surface_facet: face.surface.is_some(),
+                surface_facet: face.surface().is_some(),
                 source: SnapSource {
                     object: owner,
                     element: ElementRef::Face(fid),

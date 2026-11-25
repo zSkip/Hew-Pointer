@@ -214,7 +214,7 @@ fn mixed_counts_stay_on_circles() {
     assert!(
         walls
             .iter()
-            .all(|f| matches!(f.surface, Some(SurfaceRef::Cone { .. }))),
+            .all(|f| matches!(f.surface(), Some(SurfaceRef::Cone { .. }))),
         "every band verifies on the cone"
     );
 }
@@ -1094,7 +1094,7 @@ fn coaxial_circles_ruled_cone_and_cylinder() {
     ]))
     .unwrap();
     assert_solid(&cone);
-    let mut apexes = cone.faces().values().filter_map(|f| match f.surface {
+    let mut apexes = cone.faces().values().filter_map(|f| match f.surface() {
         Some(SurfaceRef::Cone { apex, .. }) => Some(apex),
         _ => None,
     });
@@ -1111,7 +1111,7 @@ fn coaxial_circles_ruled_cone_and_cylinder() {
     assert_eq!(
         cyl.faces()
             .values()
-            .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+            .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
             .count(),
         24
     );

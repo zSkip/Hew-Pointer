@@ -10564,7 +10564,7 @@ impl Document {
                         || r.object
                             .faces
                             .values()
-                            .any(|f| f.material == Some(id) || f.back_material == Some(id)))
+                            .any(|f| f.material == Some(id) || f.back_material() == Some(id)))
             })
             .map(|(o, _)| NodeId::Object(o))
             .collect();
@@ -10600,8 +10600,8 @@ impl Document {
                     face.material = None;
                     faces.push((oid, fid));
                 }
-                if face.back_material == Some(id) {
-                    face.back_material = None;
+                if face.back_material() == Some(id) {
+                    face.set_back_material(None);
                     back_faces.push((oid, fid));
                 }
             }
@@ -10734,7 +10734,7 @@ impl Document {
                     + r.object
                         .faces
                         .iter()
-                        .filter(|(_, f)| f.material == Some(id) || f.back_material == Some(id))
+                        .filter(|(_, f)| f.material == Some(id) || f.back_material() == Some(id))
                         .count()
             })
             .sum::<usize>()
@@ -10758,7 +10758,7 @@ impl Document {
             }
             for (_, face) in rec.object.faces.iter() {
                 referenced.extend(face.material);
-                referenced.extend(face.back_material);
+                referenced.extend(face.back_material());
             }
             referenced.extend(rec.object.blend_record_materials());
         }
@@ -11147,7 +11147,7 @@ impl Document {
     pub fn face_uv_frame(&self, object: ObjectId, face: FaceId) -> Option<Option<UvFrame>> {
         let rec = self.objects.get(object).filter(|r| !r.hidden)?;
         let f = rec.object.faces().get(face)?;
-        Some(f.uv_frame)
+        Some(f.uv_frame())
     }
 
     /// Sets `face`'s UV positioning frame (`None` resets it to the planar
@@ -11198,8 +11198,8 @@ impl Document {
         }
         let face_ref = FaceRef::of(&rec.object, face);
         let f = &mut rec.object.faces[face];
-        let prev = f.uv_frame;
-        f.uv_frame = frame;
+        let prev = f.uv_frame();
+        f.set_uv_frame(frame);
         self.undo.push(DocAction::SetFaceUvFrame {
             object,
             face: face_ref,
@@ -11340,7 +11340,7 @@ impl Document {
                         || from.is_some_and(|from_id| {
                             o.faces.values().any(|f| {
                                 f.material == Some(from_id)
-                                    || (f.back_material == Some(from_id) && to.is_some())
+                                    || (f.back_material() == Some(from_id) && to.is_some())
                             })
                         })
                 })
@@ -11385,8 +11385,8 @@ impl Document {
                     // A back painted `from` is repainted too; a back is
                     // never set to "unpainted" by a replace, since an
                     // unpainted back shows the front.
-                    if face.back_material == Some(from_id) && to.is_some() {
-                        face.back_material = to;
+                    if face.back_material() == Some(from_id) && to.is_some() {
+                        face.set_back_material(to);
                         back_faces.push((oid, fid));
                     }
                 }
@@ -21093,7 +21093,7 @@ impl Document {
             .object
             .faces()
             .values()
-            .any(|f| f.material.is_some() || f.back_material.is_some());
+            .any(|f| f.material.is_some() || f.back_material().is_some());
         let frame_differed = self.part_frame_attr(EntityRef::Object(joiner))
             != self.part_frame_attr(EntityRef::Object(keeper));
 
@@ -30847,7 +30847,7 @@ impl Document {
                     self.undo.push(action);
                     return Err(DocumentError::UnknownFace);
                 };
-                self.objects[object].object.faces[fid].uv_frame = prev;
+                self.objects[object].object.faces[fid].set_uv_frame(prev);
                 self.paint_change(object)
             }
             DocAction::ReplaceMaterial {
@@ -30877,7 +30877,7 @@ impl Document {
                     self.objects[oid].object.faces[fid].material = from;
                 }
                 for &(oid, fid) in &back_faces {
-                    self.objects[oid].object.faces[fid].back_material = from;
+                    self.objects[oid].object.faces[fid].set_back_material(from);
                 }
                 for &oid in &defaults {
                     self.objects[oid].object.default_material = from;
@@ -30930,7 +30930,7 @@ impl Document {
                     self.objects[oid].object.faces[fid].material = Some(material);
                 }
                 for &(oid, fid) in &back_faces {
-                    self.objects[oid].object.faces[fid].back_material = Some(material);
+                    self.objects[oid].object.faces[fid].set_back_material(Some(material));
                 }
                 for &oid in &defaults {
                     self.objects[oid].object.default_material = Some(material);
@@ -32626,7 +32626,7 @@ impl Document {
                     self.redo.push(action);
                     return Err(DocumentError::UnknownFace);
                 };
-                self.objects[object].object.faces[fid].uv_frame = next;
+                self.objects[object].object.faces[fid].set_uv_frame(next);
                 self.paint_change(object)
             }
             DocAction::ReplaceMaterial {
@@ -32653,7 +32653,7 @@ impl Document {
                     self.objects[oid].object.faces[fid].material = to;
                 }
                 for &(oid, fid) in &back_faces {
-                    self.objects[oid].object.faces[fid].back_material = to;
+                    self.objects[oid].object.faces[fid].set_back_material(to);
                 }
                 for &oid in &defaults {
                     self.objects[oid].object.default_material = to;
@@ -32705,7 +32705,7 @@ impl Document {
                     self.objects[oid].object.faces[fid].material = None;
                 }
                 for &(oid, fid) in &back_faces {
-                    self.objects[oid].object.faces[fid].back_material = None;
+                    self.objects[oid].object.faces[fid].set_back_material(None);
                 }
                 for &oid in &defaults {
                     self.objects[oid].object.default_material = None;
@@ -33100,7 +33100,7 @@ impl Document {
                 );
             }
             for (fid, face) in rec.object.faces.iter() {
-                for m in face.material.into_iter().chain(face.back_material) {
+                for m in face.material.into_iter().chain(face.back_material()) {
                     debug_assert!(
                         !self.deleted_materials.contains(&m),
                         "face {fid:?} of {oid:?} references a deleted material"
@@ -33966,7 +33966,7 @@ fn library_copy_object(
     let mut referenced: Vec<MaterialId> = obj
         .faces()
         .values()
-        .flat_map(|f| f.material.into_iter().chain(f.back_material))
+        .flat_map(|f| f.material.into_iter().chain(f.back_material()))
         .collect();
     if let Some(m) = obj.default_material() {
         referenced.push(m);

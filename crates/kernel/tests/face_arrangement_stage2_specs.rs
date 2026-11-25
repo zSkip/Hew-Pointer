@@ -729,7 +729,7 @@ fn rounded_corner_workflow(mut w: Wall) {
         let cylinders = obj
             .faces()
             .values()
-            .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+            .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
             .count();
         assert_eq!(cylinders, 12, "the corner walls are cylinder facets");
         w.doc.undo().expect("undo the push/pull");
@@ -749,7 +749,7 @@ fn rounded_corner_workflow(mut w: Wall) {
             o.validate().expect("valid piece");
             o.faces()
                 .values()
-                .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+                .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
                 .count()
         })
         .sum();

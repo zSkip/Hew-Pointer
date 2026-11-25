@@ -257,7 +257,7 @@ fn discover_bands(object: &Object) -> Vec<Band> {
     // First-appearance grouping in face slot order (deterministic).
     let mut groups: Vec<(SurfaceRef, Vec<FaceId>)> = Vec::new();
     for (fid, face) in object.faces() {
-        let Some(sr) = face.surface else { continue };
+        let Some(sr) = face.surface() else { continue };
         match groups.iter_mut().find(|(g, _)| g.same_surface(&sr)) {
             Some((_, list)) => list.push(fid),
             None => groups.push((sr, vec![fid])),
@@ -581,7 +581,7 @@ fn build_group_bands(
                     claimed_by_quad[qi].insert(f);
                     continue;
                 }
-                if let Some(other) = neighbor.surface {
+                if let Some(other) = neighbor.surface() {
                     if !coaxial(&other, axis_point, axis) {
                         return None; // rim against an unrelated wall
                     }

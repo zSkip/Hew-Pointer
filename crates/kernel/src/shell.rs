@@ -230,7 +230,7 @@ impl Object {
         // A claimed surface whose offset radius runs out has no room for the
         // wall; say so before the vertex solve fails to converge on it.
         for &f in &kept {
-            if self.faces()[f].surface.is_some()
+            if self.faces()[f].surface().is_some()
                 && offset_claim(self, f, if inward { d } else { -d }).is_none()
             {
                 return Err(ShapeError::WallTooThick {
@@ -460,7 +460,7 @@ impl Object {
                 let pts: Vec<Point3> = outer.iter().map(|&i| b.pos(i)).collect();
                 let attrs = FaceAttrs {
                     surface: wf
-                        .surface
+                        .surface()
                         .filter(|s| s.holds_on(&pts, &wf.plane, claim_tol)),
                     ..wf.attrs()
                 };
@@ -569,7 +569,7 @@ impl Object {
             let (a, b) = (floor[k], floor[(k + 1) % n]);
             let w = self.face_across(o, a, b)?;
             let wf = &self.faces()[w];
-            if open.contains(&w) || wf.blend.is_some() || !wf.inner_loops.is_empty() {
+            if open.contains(&w) || wf.blend().is_some() || !wf.inner_loops.is_empty() {
                 return None;
             }
             // The wall's loop runs b, a, then up the side edge from a to
@@ -597,7 +597,7 @@ impl Object {
         }
         let top = top?;
         let tf = &self.faces()[top];
-        if open.contains(&top) || tf.surface.is_some() || walls.contains(&top) {
+        if open.contains(&top) || tf.surface().is_some() || walls.contains(&top) {
             return None;
         }
         // Neighboring walls agree on the side edge between them.

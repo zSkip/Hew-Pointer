@@ -622,7 +622,7 @@ impl Document {
                 let obj = &self.objects[o].object;
                 for f in obj.faces().values() {
                     out.extend(f.material);
-                    out.extend(f.back_material);
+                    out.extend(f.back_material());
                 }
                 // The paint of the faces a blend consumed: taking the
                 // blend off brings them back with it.
@@ -705,7 +705,7 @@ impl Document {
         let mut faces: Vec<Vec<i64>> = Vec::with_capacity(obj.faces().len());
         for f in obj.faces().values() {
             let mut rec: Vec<i64> = Vec::new();
-            match f.surface {
+            match f.surface() {
                 None => rec.push(0),
                 Some(crate::topo::SurfaceRef::Cylinder {
                     axis_point,
@@ -765,8 +765,8 @@ impl Document {
                 }
             }
             rec.push(paint(f.material));
-            rec.push(paint(f.back_material));
-            match f.uv_frame {
+            rec.push(paint(f.back_material()));
+            match f.uv_frame() {
                 None => rec.push(0),
                 Some(uv) => {
                     rec.push(1);
@@ -776,7 +776,7 @@ impl Document {
                     rec.push(qf(uv.v0));
                 }
             }
-            match f.blend {
+            match f.blend() {
                 None => rec.push(0),
                 Some(t) => {
                     let kind = match t.kind {

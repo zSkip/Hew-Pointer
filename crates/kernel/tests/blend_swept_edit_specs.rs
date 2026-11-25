@@ -48,7 +48,7 @@ fn junction(obj: &Object) -> Vec<EdgeId> {
         .keys()
         .filter(|&e| {
             let (x, y) = obj.edge_faces_for_test(e).unwrap();
-            match (obj.faces()[x].surface, obj.faces()[y].surface) {
+            match (obj.faces()[x].surface(), obj.faces()[y].surface()) {
                 (
                     Some(SurfaceRef::Cylinder { axis: p, .. }),
                     Some(SurfaceRef::Cylinder { axis: q, .. }),
@@ -120,7 +120,7 @@ fn oblique_cut() -> (Object, Vec<EdgeId>) {
         .filter(|&e| {
             let (x, y) = cut.edge_faces_for_test(e).unwrap();
             let (p, q) = cut.edge_endpoints(e).unwrap();
-            (cut.faces()[x].surface.is_some() != cut.faces()[y].surface.is_some())
+            (cut.faces()[x].surface().is_some() != cut.faces()[y].surface().is_some())
                 && p.z > 0.3
                 && q.z > 0.3
         })
@@ -674,7 +674,7 @@ fn claims_a_few_ulps_apart_are_one_surface() {
             axis_point,
             axis,
             radius,
-        }) = cut.faces()[f].surface
+        }) = cut.faces()[f].surface()
             && i % 2 == 0
         {
             nudged.set_face_surface_for_test(

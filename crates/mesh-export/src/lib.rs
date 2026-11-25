@@ -445,7 +445,7 @@ fn resolve_uv(
     p: Point3,
 ) -> [f32; 2] {
     let face = &object.faces()[fid];
-    if let Some(frame) = face.uv_frame {
+    if let Some(frame) = face.uv_frame() {
         let uv = frame.apply(p);
         return [uv[0] as f32, uv[1] as f32];
     }

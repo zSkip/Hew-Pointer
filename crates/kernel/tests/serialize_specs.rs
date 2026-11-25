@@ -297,7 +297,7 @@ fn imprinted_circle_edge_claim_round_trips_through_geometry_buffer_v5() {
     let attributed = drilled
         .faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
         .count();
     assert_eq!(
         attributed, 24,

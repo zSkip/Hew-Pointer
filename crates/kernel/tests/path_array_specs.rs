@@ -217,7 +217,7 @@ fn claims_survive_uniform_scale() {
         assert_valid_solid(obj);
         assert_eq!(claim_census(obj).get("cylinder"), Some(&12));
         for f in obj.faces().values() {
-            if let Some(SurfaceRef::Cylinder { radius, .. }) = f.surface {
+            if let Some(SurfaceRef::Cylinder { radius, .. }) = f.surface() {
                 assert!((radius - want).abs() < 1e-9, "radius {radius} vs {want}");
             }
         }

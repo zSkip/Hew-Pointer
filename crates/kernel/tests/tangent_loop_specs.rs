@@ -1442,7 +1442,7 @@ fn sweep_every_face(w: &mut Wall) -> Vec<Attempt> {
                     .map(|&l| obj.loop_positions(l).collect())
                     .collect();
                 let n = face.plane.normal();
-                let kind = if face.surface.is_some() {
+                let kind = if face.surface().is_some() {
                     SweptKind::Wall
                 } else if (n + v).length() < 1e-9 {
                     SweptKind::TangentSide
@@ -1913,7 +1913,7 @@ fn the_pocket_touches_the_side_face_along_its_generatrix() {
     let edge = obj.edges()[e];
     for h in [edge.half_edge, edge.twin_half_edge.expect("interior")] {
         let f = obj.loops()[obj.half_edges()[h].loop_id].face;
-        assert!(obj.faces()[f].surface.is_some(), "a wall facet");
+        assert!(obj.faces()[f].surface().is_some(), "a wall facet");
         assert!(
             obj.loop_positions(obj.faces()[f].outer_loop)
                 .all(|p| plane.signed_distance(p) <= 1e-12),

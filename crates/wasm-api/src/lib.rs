@@ -10097,7 +10097,7 @@ impl Scene {
             .faces()
             .get(fid)
             .ok_or_else(|| stale("UnknownFace", "face"))?;
-        Ok(face.surface.is_some())
+        Ok(face.surface().is_some())
     }
 
     /// A world Object edge's two endpoint positions in world space, as
@@ -11848,7 +11848,7 @@ impl Scene {
         let candidates = std::iter::once(obj.default_material()).chain(
             obj.faces()
                 .iter()
-                .flat_map(|(_, f)| [f.material, f.back_material]),
+                .flat_map(|(_, f)| [f.material, f.back_material()]),
         );
         for m in candidates.flatten() {
             if self.doc.material(m).is_some() && !seen.contains(&m) {
@@ -23261,7 +23261,7 @@ mod tests {
                 .unwrap()
                 .faces()
                 .values()
-                .filter(|f| matches!(f.surface, Some(kernel::SurfaceRef::Cylinder { .. })))
+                .filter(|f| matches!(f.surface(), Some(kernel::SurfaceRef::Cylinder { .. })))
                 .count()
         };
         let mut scene = Scene::new();
@@ -29583,7 +29583,7 @@ mod tests {
         let obj = doc.object(*o).unwrap();
         assert_eq!(obj.faces().len(), 1, "one face");
         let (fid, face) = obj.faces().iter().next().unwrap();
-        let frame = face.uv_frame.expect("the face is placed by a UV frame");
+        let frame = face.uv_frame().expect("the face is placed by a UV frame");
         let mut corners: Vec<([f64; 3], [f64; 2])> = obj
             .loop_positions(face.outer_loop)
             .map(|p| {

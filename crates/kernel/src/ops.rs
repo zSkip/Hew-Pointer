@@ -50,7 +50,8 @@ use crate::math::{Plane, Point3, Vec3};
 use crate::sketch::Profile;
 use crate::tol;
 use crate::topo::{
-    AttrSlot, Edge, EdgeArcs, Face, HalfEdge, Loop, LoopKind, Object, Vertex, WatertightState,
+    AttrSlot, Edge, EdgeArcs, Face, FaceAttrs, HalfEdge, Loop, LoopKind, LoopList, Object, Vertex,
+    WatertightState,
 };
 use crate::transform::{Transform, TransformError};
 use crate::trig;
@@ -1132,12 +1133,12 @@ impl Object {
         }
         for (f, plane) in self.faces.values_mut().zip(planes) {
             f.plane = plane;
-            f.surface = map_surface(f.surface, transform, scale);
-            f.uv_frame = map_uv_frame(f.uv_frame, transform);
+            f.set_surface(map_surface(f.surface(), transform, scale));
+            f.set_uv_frame(map_uv_frame(f.uv_frame(), transform));
             // A blend tag rides with the claims: kept under a similarity,
             // dropped where a non-similarity drops them.
             if scale.is_none() {
-                f.blend = None;
+                f.set_blend(None);
             }
         }
         // Per-edge analytic circle claims follow the same map-or-drop rule:
@@ -1260,7 +1261,7 @@ impl Object {
                 // refused rather than smearing the face's picture. (A
                 // frame already invalid on arrival is not this map's
                 // doing and rides along as it is.)
-                if let Some(f) = face.uv_frame
+                if let Some(f) = face.uv_frame()
                     && f.is_valid()
                     && !map_uv_frame(Some(f), transform).is_some_and(|m| m.is_valid())
                 {
@@ -1291,7 +1292,7 @@ impl Object {
             // what a cylinder wall allows, while the mapped plane keeps the
             // exact turn of the normal; so a claimed face takes the first
             // candidate its claim also holds on.
-            let claim = map_surface(face.surface, transform, scale);
+            let claim = map_surface(face.surface(), transform, scale);
             if claim.is_some() {
                 claim_points.clear();
                 claim_points.extend(points());
@@ -1359,10 +1360,10 @@ impl Object {
         let scale = pose.similarity_scale();
         for (f, plane) in self.faces.values_mut().zip(planes) {
             f.plane = plane;
-            f.surface = map_surface(f.surface, pose, scale);
-            f.uv_frame = map_uv_frame(f.uv_frame, pose);
+            f.set_surface(map_surface(f.surface(), pose, scale));
+            f.set_uv_frame(map_uv_frame(f.uv_frame(), pose));
             if scale.is_none() {
-                f.blend = None;
+                f.set_blend(None);
             }
         }
         self.map_edge_arcs(|g| map_curve(g, pose, scale));
@@ -1385,7 +1386,7 @@ impl Object {
     pub(crate) fn remap_materials(&mut self, f: &dyn Fn(MaterialId) -> MaterialId) {
         for face in self.faces.values_mut() {
             face.material = face.material.map(f);
-            face.back_material = face.back_material.map(f);
+            face.set_back_material(face.back_material().map(f));
         }
         self.default_material = self.default_material.map(f);
         // The paint of faces a blend consumed lives in its record until the
@@ -3729,7 +3730,7 @@ impl Object {
         // facet drops its claim below (map-or-drop) — exactly what a Follow
         // Me band always got.
         if matches!(
-            self.faces[face].surface,
+            self.faces[face].surface(),
             Some(crate::topo::SurfaceRef::Cylinder { .. })
         ) {
             return self.offset_cylinder_wall(face, distance, guards);
@@ -3926,8 +3927,8 @@ impl Object {
                 // pushed, or one the touch vertex holds) is the non-manifold
                 // case; a plain planar face dragged off its plane by a plain
                 // one is named as such.
-                let claimed = self.faces[face].surface.is_some()
-                    || pinned.iter().any(|&p| self.faces[p].surface.is_some());
+                let claimed = self.faces[face].surface().is_some()
+                    || pinned.iter().any(|&p| self.faces[p].surface().is_some());
                 return Err(if claimed {
                     PushPullError::NonManifoldResult
                 } else {
@@ -4021,8 +4022,8 @@ impl Object {
         // transverse walls keep theirs — their planes are unchanged and they
         // still lie on the same (infinite) cylinder.
         if let Some(f) = obj.faces.get_mut(face) {
-            f.surface = None;
-            f.blend = None;
+            f.set_surface(None);
+            f.set_blend(None);
         }
         // A stretched neighbour keeps a cylinder claim (its plane and the
         // axis are unchanged), but a sphere, torus or cone facet whose
@@ -4031,7 +4032,7 @@ impl Object {
         // longer hold (map-or-drop; never move geometry to keep a claim).
         for &nf in &neighbor_faces {
             let Some(f) = obj.faces.get(nf) else { continue };
-            let Some(claim) = f.surface else { continue };
+            let Some(claim) = f.surface() else { continue };
             if matches!(claim, crate::topo::SurfaceRef::Cylinder { .. }) {
                 continue;
             }
@@ -4040,7 +4041,7 @@ impl Object {
                 .flat_map(|l| obj.loop_positions(l))
                 .collect();
             if !crate::surface::validate_face_claim(&claim, &f.plane, &points, obj.planarity_tol) {
-                obj.faces[nf].surface = None;
+                obj.faces[nf].set_surface(None);
             }
         }
         // A moved subset of vertices carries an imprinted circle's endpoints
@@ -4226,7 +4227,7 @@ impl Object {
         guards: GuardMode,
     ) -> Result<PushPullReport, PushPullError> {
         let surface = self.faces[face]
-            .surface
+            .surface()
             .expect("offset_cylinder_wall is only routed to for attributed faces");
         let crate::topo::SurfaceRef::Cylinder {
             axis_point,
@@ -4261,7 +4262,11 @@ impl Object {
         let wall_faces: Vec<FaceId> = self
             .faces
             .iter()
-            .filter(|(_, f)| f.surface.as_ref().is_some_and(|s| s.same_surface(&surface)))
+            .filter(|(_, f)| {
+                f.surface()
+                    .as_ref()
+                    .is_some_and(|s| s.same_surface(&surface))
+            })
             .map(|(fid, _)| fid)
             .collect();
 
@@ -4415,7 +4420,7 @@ impl Object {
             radius: new_radius,
         };
         for &fid in &wall_faces {
-            obj.faces[fid].surface = Some(new_surface);
+            obj.faces[fid].set_surface(Some(new_surface));
         }
         // Neighbors that translate/stretch/pivot under the radial map can carry
         // an imprinted circle's endpoints off its center; drop any per-edge
@@ -4849,17 +4854,19 @@ impl Object {
         // lies on the same chord plane of the same cylinder) — unless undo
         // supplied the dissolved sub-face's own snapshot to restore.
         let sub_attrs = restore.unwrap_or_else(|| obj.faces[face].attrs());
-        let sub_face = obj.faces.insert(Face {
-            outer_loop: sub_loop,
-            inner_loops: Vec::new(),
-            plane: face_plane,
-            material: sub_attrs.material,
-            back_material: sub_attrs.back_material,
-            uv_frame: sub_attrs.uv_frame,
-            surface: sub_attrs.surface,
-            blend: sub_attrs.blend,
-            attrs: sub_attrs.attrs,
-        });
+        let sub_face = obj.faces.insert(Face::new(
+            sub_loop,
+            LoopList::new(),
+            face_plane,
+            FaceAttrs {
+                material: sub_attrs.material,
+                back_material: sub_attrs.back_material,
+                uv_frame: sub_attrs.uv_frame,
+                surface: sub_attrs.surface,
+                blend: sub_attrs.blend,
+                attrs: sub_attrs.attrs,
+            },
+        ));
         obj.loops[sub_loop].face = sub_face;
 
         // sub-face half-edges: h_sub[k] = verts[k] -> verts[k+1] (CCW).
@@ -5765,27 +5772,29 @@ impl Object {
             ];
             let plane = crate::serialize::own_ring_plane(&wall_pts, &[], obj.planarity_tol)
                 .map_err(|_| PushPullError::NonManifoldResult)?;
-            let wface = obj.faces.insert(Face {
-                outer_loop: wloop,
-                inner_loops: Vec::new(),
+            let wface = obj.faces.insert(Face::new(
+                wloop,
+                LoopList::new(),
                 plane,
-                // Freshly generated boss walls take the default material and no
-                // UV frame. `surface` carries the swept cylinder when this
-                // wall's base edge is a chord facet of a drawn circle (computed
-                // above), else `None` — so bossing an imprinted circle or arc
-                // raises walls that shade smooth and whose push offsets the
-                // radius, while a straight edge stays a flat facet.
-                material: None,
-                back_material: None,
-                uv_frame: None,
-                surface: facet_curves[k].map(|g| crate::topo::SurfaceRef::Cylinder {
-                    axis_point: g.center,
-                    axis: normal,
-                    radius: g.radius,
-                }),
-                blend: None,
-                attrs: AttrSlot::NONE,
-            });
+                FaceAttrs {
+                    // Freshly generated boss walls take the default material and no
+                    // UV frame. `surface` carries the swept cylinder when this
+                    // wall's base edge is a chord facet of a drawn circle (computed
+                    // above), else `None` — so bossing an imprinted circle or arc
+                    // raises walls that shade smooth and whose push offsets the
+                    // radius, while a straight edge stays a flat facet.
+                    material: None,
+                    back_material: None,
+                    uv_frame: None,
+                    surface: facet_curves[k].map(|g| crate::topo::SurfaceRef::Cylinder {
+                        axis_point: g.center,
+                        axis: normal,
+                        radius: g.radius,
+                    }),
+                    blend: None,
+                    attrs: AttrSlot::NONE,
+                },
+            ));
             obj.loops[wloop].face = wface;
             walls.push(wface);
         }
@@ -5852,8 +5861,8 @@ impl Object {
         refit_face_plane(&mut obj, sub_face)?;
         // The raised sub-face left its chord plane: its inherited analytic
         // surface claim drops (map-or-drop, the true-curves design).
-        obj.faces[sub_face].surface = None;
-        obj.faces[sub_face].blend = None;
+        obj.faces[sub_face].set_surface(None);
+        obj.faces[sub_face].set_blend(None);
 
         let shell = obj
             .shells
@@ -6128,7 +6137,7 @@ impl Object {
 
         let face_plane = self.faces[face].plane;
         let outer_loop = self.faces[face].outer_loop;
-        let inner_loops: Vec<LoopId> = self.faces[face].inner_loops.clone();
+        let inner_loops: Vec<LoopId> = self.faces[face].inner_loops.to_vec();
 
         // Collect outer loop half-edges and vertex positions.
         let outer_hes: Vec<HalfEdgeId> = self.loop_half_edges(outer_loop).collect();
@@ -6862,10 +6871,10 @@ impl Object {
         let fa = &self.faces[face_a];
         let fb = &self.faces[face_b];
         if fa.material != fb.material
-            || fa.back_material != fb.back_material
-            || fa.uv_frame != fb.uv_frame
-            || fa.surface != fb.surface
-            || fa.blend != fb.blend
+            || fa.back_material() != fb.back_material()
+            || fa.uv_frame() != fb.uv_frame()
+            || fa.surface() != fb.surface()
+            || fa.blend() != fb.blend()
             || !self.face_attrs_eq(face_a, face_b)
         {
             return None;
@@ -7294,8 +7303,8 @@ impl Object {
                 inner,
                 face.plane,
                 face.material,
-                face.uv_frame,
-                face.surface,
+                face.uv_frame(),
+                face.surface(),
                 // Each face keeps its own dictionary; edges are rebuilt
                 // fresh and carry none (like their curve claims).
                 self.face_attrs(fid).cloned().unwrap_or_default(),
@@ -7303,11 +7312,13 @@ impl Object {
         }
 
         let mut obj = Object::from_faces_with_holes(&positions, &specs);
-        let backs: Vec<crate::material::FaceMaterial> =
-            faces.iter().map(|&f| self.faces[f].back_material).collect();
+        let backs: Vec<crate::material::FaceMaterial> = faces
+            .iter()
+            .map(|&f| self.faces[f].back_material())
+            .collect();
         obj.set_built_back_materials(&backs);
         let blends: Vec<Option<crate::topo::BlendTag>> =
-            faces.iter().map(|&f| self.faces[f].blend).collect();
+            faces.iter().map(|&f| self.faces[f].blend()).collect();
         obj.set_built_blends(&blends);
         // Every edge of a piece is an edge of this object, unchanged: it
         // keeps its soft, crease, curve and polygon marks.
@@ -7480,7 +7491,7 @@ impl Object {
         if self
             .faces
             .get(face)
-            .is_some_and(|f| matches!(f.surface, Some(crate::topo::SurfaceRef::Cylinder { .. })))
+            .is_some_and(|f| matches!(f.surface(), Some(crate::topo::SurfaceRef::Cylinder { .. })))
         {
             return false;
         }
@@ -7558,7 +7569,7 @@ impl Object {
         let Some(f) = self.faces.get(face) else {
             return false;
         };
-        if f.surface.is_some() {
+        if f.surface().is_some() {
             return false;
         }
         let boundary_loops: Vec<LoopId> = std::iter::once(f.outer_loop)
@@ -8016,7 +8027,7 @@ impl Object {
                                 edge.half_edge
                             };
                             let other = self.loops[self.half_edges[twin].loop_id].face;
-                            let claim = self.faces[other].surface?;
+                            let claim = self.faces[other].surface()?;
                             Self::rim_circle_of(&claim, &f.plane, p, q)?
                         }
                         None => return None,
@@ -9890,7 +9901,7 @@ fn stamp_circle_walls(obj: &mut Object, walls: &[FaceId], axis: Vec3) {
         let Some(face) = obj.faces.get(w) else {
             continue;
         };
-        if face.surface.is_some() {
+        if face.surface().is_some() {
             continue;
         }
         let ring: Vec<Point3> = obj.loop_positions(face.outer_loop).collect();
@@ -9919,7 +9930,7 @@ fn stamp_circle_walls(obj: &mut Object, walls: &[FaceId], axis: Vec3) {
         let Some((surface, h, g)) = stamp else {
             continue;
         };
-        obj.faces[w].surface = Some(surface);
+        obj.faces[w].set_surface(Some(surface));
 
         // Carry the circle onto the quad's opposite edge. Loop order is
         // h (p0 -> p1), n1, opp (q0 -> q1), n3 (q1 -> p0): q1 sits over p0.
@@ -10705,17 +10716,19 @@ fn build_coplanar_wall(
     ];
     let plane = crate::serialize::own_ring_plane(&wall_pts, &[], obj.planarity_tol)
         .map_err(|_| PushPullError::NonManifoldResult)?;
-    let wface = obj.faces.insert(Face {
-        outer_loop: wloop,
-        inner_loops: Vec::new(),
+    let wface = obj.faces.insert(Face::new(
+        wloop,
+        LoopList::new(),
         plane,
-        material: None,
-        back_material: None,
-        uv_frame: None,
-        surface: None,
-        blend: None,
-        attrs: AttrSlot::NONE,
-    });
+        FaceAttrs {
+            material: None,
+            back_material: None,
+            uv_frame: None,
+            surface: None,
+            blend: None,
+            attrs: AttrSlot::NONE,
+        },
+    ));
     obj.loops[wloop].face = wface;
     Ok(wface)
 }
@@ -10917,7 +10930,7 @@ fn do_split_face(
     ep1: &EndpointHit,
 ) -> Result<FaceSplitReport, StickyError> {
     let face_plane = obj.faces[face].plane;
-    let inner_loops: Vec<LoopId> = obj.faces[face].inner_loops.clone();
+    let inner_loops: Vec<LoopId> = obj.faces[face].inner_loops.to_vec();
 
     // 1. If either endpoint is an edge hit, split that boundary edge.
     //
@@ -11023,20 +11036,23 @@ fn do_split_face(
 
     // Face B is a new face (face A reuses the original FaceId).
     let src = &obj.faces[face];
-    let face_b = Face {
-        outer_loop: loop_b_id,
-        inner_loops: Vec::new(), // holes assigned below
-        plane: face_plane,       // same plane as original
-        // Both halves of a split inherit the original face's material, UV
-        // frame ( +  extension), and analytic surface; face A keeps them by
-        // reusing its FaceId.
-        material: src.material,
-        back_material: src.back_material,
-        uv_frame: src.uv_frame,
-        surface: src.surface,
-        blend: src.blend,
-        attrs: src.attrs,
-    };
+    let face_b = Face::new(
+        loop_b_id,
+        LoopList::new(), // holes assigned below
+        face_plane,
+        FaceAttrs {
+            // same plane as original
+            // Both halves of a split inherit the original face's material, UV
+            // frame ( +  extension), and analytic surface; face A keeps them by
+            // reusing its FaceId.
+            material: src.material,
+            back_material: src.back_material(),
+            uv_frame: src.uv_frame(),
+            surface: src.surface(),
+            blend: src.blend(),
+            attrs: src.attr_slot(),
+        },
+    );
     let face_b_id = obj.faces.insert(face_b);
     obj.loops[loop_b_id].face = face_b_id;
 
@@ -11231,17 +11247,7 @@ fn do_split_face_hole(
         kind: LoopKind::Outer,
     });
     let src = &obj.faces[face];
-    let lune_face = Face {
-        outer_loop: lune_loop,
-        inner_loops: Vec::new(),
-        plane: face_plane,
-        material: src.material,
-        back_material: src.back_material,
-        uv_frame: src.uv_frame,
-        surface: src.surface,
-        blend: src.blend,
-        attrs: src.attrs,
-    };
+    let lune_face = Face::new(lune_loop, LoopList::new(), face_plane, src.attrs());
     let lune = obj.faces.insert(lune_face);
     wire_loop_sequence(obj, &lune_seq, lune_loop, lune);
     // 8. The rerouted hole keeps its loop id (still Inner, still `face`'s).
@@ -11682,8 +11688,8 @@ fn do_merge_faces(
 ) -> Result<FaceMergeReport, StickyError> {
     let outer_a = obj.faces[face_a].outer_loop;
     let outer_b = obj.faces[face_b].outer_loop;
-    let face_b_surface = obj.faces[face_b].surface;
-    let face_b_blend = obj.faces[face_b].blend;
+    let face_b_surface = obj.faces[face_b].surface();
+    let face_b_blend = obj.faces[face_b].blend();
 
     // Snapshot each input face's attribute state, pinned to a point strictly
     // inside it, BEFORE surgery: undoing this merge must give each side back
@@ -11924,7 +11930,7 @@ fn do_merge_faces(
     repair_dangling_outgoing(obj);
 
     // 11. Combine inner loops from face_b into face_a.
-    let inner_b: Vec<LoopId> = obj.faces[face_b].inner_loops.clone();
+    let inner_b: Vec<LoopId> = obj.faces[face_b].inner_loops.to_vec();
     for il in inner_b {
         obj.loops[il].face = face_a;
         obj.faces[face_a].inner_loops.push(il);
@@ -11986,12 +11992,12 @@ fn do_merge_faces(
     // the same one (map-or-drop: absorbing area from a face on a different —
     // or no — cylinder would make the claim a lie). `face_b_surface` was
     // captured before face_b died.
-    if obj.faces[face_a].surface != face_b_surface {
-        obj.faces[face_a].surface = None;
+    if obj.faces[face_a].surface() != face_b_surface {
+        obj.faces[face_a].set_surface(None);
     }
     // The blend tag follows the same rule.
-    if obj.faces[face_a].blend != face_b_blend {
-        obj.faces[face_a].blend = None;
+    if obj.faces[face_a].blend() != face_b_blend {
+        obj.faces[face_a].set_blend(None);
     }
     // (If refit fails, keep the original plane — shouldn't happen with valid geometry.)
 
@@ -12031,8 +12037,8 @@ fn do_merge_into_hole(
     keep_vertices: &[Point3],
 ) -> Result<FaceMergeReport, StickyError> {
     let outer_in = obj.faces[inner].outer_loop;
-    let inner_surface = obj.faces[inner].surface;
-    let inner_blend = obj.faces[inner].blend;
+    let inner_surface = obj.faces[inner].surface();
+    let inner_blend = obj.faces[inner].blend();
     let normal = obj.faces[owner].plane.normal();
     let prior_attrs = [attrs_snapshot(obj, inner), attrs_snapshot(obj, owner)];
 
@@ -12132,7 +12138,7 @@ fn do_merge_into_hole(
     repair_dangling_outgoing(obj);
 
     // 6. `inner`'s holes move to `owner`; `inner` and its outer loop go.
-    let holes_in: Vec<LoopId> = obj.faces[inner].inner_loops.clone();
+    let holes_in: Vec<LoopId> = obj.faces[inner].inner_loops.to_vec();
     for il in holes_in {
         obj.loops[il].face = owner;
         obj.faces[owner].inner_loops.push(il);
@@ -12146,11 +12152,11 @@ fn do_merge_into_hole(
     // 7. `owner`'s outer ring did not move: its plane stands. Its analytic
     //    surface survives only if the dissolved face claimed the same one
     //    (map-or-drop).
-    if obj.faces[owner].surface != inner_surface {
-        obj.faces[owner].surface = None;
+    if obj.faces[owner].surface() != inner_surface {
+        obj.faces[owner].set_surface(None);
     }
-    if obj.faces[owner].blend != inner_blend {
-        obj.faces[owner].blend = None;
+    if obj.faces[owner].blend() != inner_blend {
+        obj.faces[owner].set_blend(None);
     }
 
     // 8. Post-check, walking the rerouted hole defensively: it must close
@@ -13363,7 +13369,7 @@ mod tests {
         obj.faces
             .values()
             .flat_map(|f| {
-                let fr = f.uv_frame.expect("every face is framed");
+                let fr = f.uv_frame().expect("every face is framed");
                 obj.loop_positions(f.outer_loop)
                     .map(move |p| fr.apply(p))
                     .collect::<Vec<_>>()
@@ -13379,12 +13385,12 @@ mod tests {
     fn a_session_pose_carries_each_faces_texture_frame() {
         let mut cube = unit_cube();
         for f in cube.faces.values_mut() {
-            f.uv_frame = Some(crate::material::UvFrame::new(
+            f.set_uv_frame(Some(crate::material::UvFrame::new(
                 Vec3::new(1.0, 0.2, 0.1),
                 Vec3::new(0.1, 1.0, 0.3),
                 0.25,
                 -0.5,
-            ));
+            )));
         }
         let before = corner_uvs(&cube);
         let pose = Transform::uniform_scale(2.5)
@@ -13450,16 +13456,16 @@ mod tests {
                 .then(&Transform::rotation(axis, angle).unwrap())
                 .then(&Transform::translation(pivot - Point3::ORIGIN));
             let mut obj = far_cylinder(far);
-            let claims = obj.faces.values().filter(|f| f.surface.is_some()).count();
+            let claims = obj.faces.values().filter(|f| f.surface().is_some()).count();
             assert_eq!(claims, 48);
             obj.apply_session_pose(&pose);
             obj.validate().unwrap();
             assert_eq!(
-                obj.faces.values().filter(|f| f.surface.is_some()).count(),
+                obj.faces.values().filter(|f| f.surface().is_some()).count(),
                 claims
             );
             for f in obj.faces.values() {
-                if let Some(c) = f.surface {
+                if let Some(c) = f.surface() {
                     let pts: Vec<Point3> = obj.loop_positions(f.outer_loop).collect();
                     assert!(
                         crate::surface::validate_face_claim(&c, &f.plane, &pts, obj.planarity_tol),

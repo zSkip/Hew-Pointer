@@ -2419,7 +2419,7 @@ impl Scene {
         };
         obj.faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| t.id.0 == blend))
+            .filter(|(_, f)| f.blend().is_some_and(|t| t.id.0 == blend))
             .map(|(id, _)| id.data().as_ffi())
             .collect()
     }

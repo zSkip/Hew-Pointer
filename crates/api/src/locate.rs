@@ -318,7 +318,7 @@ fn resolve_center(ctx: &Ctx, of: &serde_json::Value) -> Result<Point3, CmdError>
         .faces()
         .get(face.face)
         .ok_or_else(|| missed("face"))?;
-    let Some(surface) = f.surface else {
+    let Some(surface) = f.surface() else {
         return Err(CmdError::Refusal(Refusal::api(
             "no_such_point",
             "That face is not a stamped curved wall; it has no analytic center.",

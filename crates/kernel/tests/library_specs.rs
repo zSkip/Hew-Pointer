@@ -407,7 +407,7 @@ fn insert_preserves_analytic_surfaces() {
             .unwrap()
             .faces()
             .values()
-            .filter(|f| f.surface.is_some())
+            .filter(|f| f.surface().is_some())
             .count()
     };
     let src_surfaces = count_surfaces(&src, oid);

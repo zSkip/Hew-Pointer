@@ -1378,9 +1378,9 @@ impl Object {
     /// Object is always written at v10 or later, so nothing is ever dropped.
     fn has_curve_geometry(&self) -> bool {
         self.faces.values().any(|f| {
-            f.blend.is_some()
+            f.blend().is_some()
                 || matches!(
-                    f.surface,
+                    f.surface(),
                     Some(
                         crate::topo::SurfaceRef::Sphere { .. }
                             | crate::topo::SurfaceRef::Torus { .. }
@@ -1886,7 +1886,7 @@ impl Object {
                 // dropped, so the face reopens as a plain facet instead of
                 // making the whole file unreadable. Faces without a claim
                 // (every imported mesh face) skip the check.
-                let surface = match (face.surface, reopen_plane) {
+                let surface = match (face.surface(), reopen_plane) {
                     (Some(claim), Some(on)) => {
                         let points: Vec<Point3> = boundary().collect();
                         if crate::surface::validate_face_claim(&claim, &on, &points, reopen_tol) {
@@ -1910,11 +1910,11 @@ impl Object {
                         Some(m) => material_dense(m),
                         None => NO_MATERIAL,
                     },
-                    back_mat_id: match face.back_material {
+                    back_mat_id: match face.back_material() {
                         Some(m) => material_dense(m),
                         None => NO_MATERIAL,
                     },
-                    uv_frame: face.uv_frame,
+                    uv_frame: face.uv_frame(),
                     surface,
                     outer_curves,
                     hole_curves,
@@ -1924,8 +1924,8 @@ impl Object {
                     hole_soft,
                     outer_crease,
                     hole_crease,
-                    blend: face.blend,
-                    attrs: self.attr_dict(face.attrs).map(attr_dict_json),
+                    blend: face.blend(),
+                    attrs: self.attr_dict(face.attr_slot()).map(attr_dict_json),
                     outer_attrs,
                     hole_attrs,
                     shell: component_ordinal[fid],
@@ -4006,7 +4006,7 @@ pub(crate) fn blend_records_to_dtos(
     let present: std::collections::BTreeSet<crate::topo::BlendId> = obj
         .faces()
         .values()
-        .filter_map(|f| f.blend.map(|t| t.id))
+        .filter_map(|f| f.blend().map(|t| t.id))
         .collect();
     let dense = |m: crate::material::FaceMaterial| m.map(material_dense);
     obj.blend_records()
@@ -8324,17 +8324,17 @@ mod face_plane_writer_tests {
             .unwrap();
         // The top's corners sit between 9 and 10 m from this axis
         // (sqrt(81 + 1) to sqrt(100 + 1)), far past its 1 mm radius.
-        obj.faces[top].surface = Some(SurfaceRef::Cylinder {
+        obj.faces[top].set_surface(Some(SurfaceRef::Cylinder {
             axis_point: Point3::new(10.0, 10.0, 0.0),
             axis: Vec3::new(1.0, 0.0, 0.0),
             radius: 0.001,
-        });
+        }));
         assert!(obj.validate().is_err(), "the state is invalid");
         let bytes = obj.encode(&|_| 0);
         assert_eq!(bytes, plain, "the lying claim is not written");
         let back = Object::decode(&bytes, &|_| None).unwrap();
         back.validate().unwrap();
-        assert!(back.faces.values().all(|f| f.surface.is_none()));
+        assert!(back.faces.values().all(|f| f.surface().is_none()));
         assert_eq!(back.encode(&|_| 0), bytes, "re-saves to the same bytes");
 
         // A claim the bottom's chord facet satisfies survives.
@@ -8344,7 +8344,7 @@ mod face_plane_writer_tests {
             axis: Vec3::new(1.0, 0.0, 0.0),
             radius: 2.0,
         };
-        kept.faces[bottom].surface = Some(claim);
+        kept.faces[bottom].set_surface(Some(claim));
         kept.validate().unwrap();
         let bytes = kept.encode(&|_| 0);
         assert_ne!(bytes, plain);
@@ -8353,7 +8353,7 @@ mod face_plane_writer_tests {
         assert_eq!(
             back.faces
                 .values()
-                .filter(|f| f.surface == Some(claim))
+                .filter(|f| f.surface() == Some(claim))
                 .count(),
             1
         );
@@ -8477,7 +8477,7 @@ mod face_plane_writer_tests {
             !crate::surface::validate_face_claim(&claim, &plane, &both, tol),
             "and fails once the hole's points are counted"
         );
-        obj.faces[top].surface = Some(claim);
+        obj.faces[top].set_surface(Some(claim));
         obj.faces[top].plane =
             Plane::from_unit_normal_offset(Vec3::new(0.0, 0.0, 1.0), 1.0 + 1e-8).unwrap();
         obj.faces[bottom].plane = obj.faces[bottom].plane.flipped();
@@ -8508,6 +8508,6 @@ mod face_plane_writer_tests {
         assert_eq!(*seen.lock().unwrap(), vec![2], "two faces, each once");
         let back = Object::decode(&bytes, &|_| None).unwrap();
         back.validate().unwrap();
-        assert!(back.faces.values().all(|f| f.surface.is_none()));
+        assert!(back.faces.values().all(|f| f.surface().is_none()));
     }
 }

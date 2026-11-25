@@ -521,8 +521,8 @@ pub fn geometry_hash(doc: &Document, obj: &Object) -> u64 {
                 hole.iter().flatten().for_each(|&c| h.u64(c));
             }
             h.u64(material_hash(doc, f.material));
-            h.u64(material_hash(doc, f.back_material));
-            if let Some(uv) = f.uv_frame {
+            h.u64(material_hash(doc, f.back_material()));
+            if let Some(uv) = f.uv_frame() {
                 for c in [uv.s.x, uv.s.y, uv.s.z, uv.t.x, uv.t.y, uv.t.z, uv.u0, uv.v0] {
                     h.f(c);
                 }
@@ -531,7 +531,7 @@ pub fn geometry_hash(doc: &Document, obj: &Object) -> u64 {
                 axis_point,
                 axis,
                 radius,
-            }) = f.surface
+            }) = f.surface()
             {
                 for c in [
                     axis_point.x,
@@ -548,7 +548,7 @@ pub fn geometry_hash(doc: &Document, obj: &Object) -> u64 {
             // The other classes (never in a source file, so never part of a
             // pre-existing hash) still distinguish an edited face: a kind
             // marker, then the payload in the geometry buffer's order.
-            let other: Option<(u64, Vec<f64>)> = match f.surface {
+            let other: Option<(u64, Vec<f64>)> = match f.surface() {
                 Some(kernel::SurfaceRef::Sphere { center, radius }) => {
                     Some((2, vec![center.x, center.y, center.z, radius]))
                 }

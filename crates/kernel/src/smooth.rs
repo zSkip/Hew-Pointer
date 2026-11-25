@@ -60,8 +60,8 @@ impl Object {
             let face = &self.faces()[src];
             let attrs = FaceAttrs {
                 material: face.material,
-                back_material: face.back_material,
-                uv_frame: face.uv_frame,
+                back_material: face.back_material(),
+                uv_frame: face.uv_frame(),
                 surface: None,
                 blend: None,
                 // Interned into the baked Object's own table below.

@@ -525,7 +525,7 @@ fn cylinder_cap_offset_recovers_the_analytic_circle() {
     let top = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_none() && f.plane.normal().z > 0.5)
+        .find(|(_, f)| f.surface().is_none() && f.plane.normal().z > 0.5)
         .map(|(id, _)| id)
         .expect("top cap");
 
@@ -563,7 +563,7 @@ fn face_offset_refusals_are_typed() {
     let top = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_none() && f.plane.normal().z > 0.5)
+        .find(|(_, f)| f.surface().is_none() && f.plane.normal().z > 0.5)
         .map(|(id, _)| id)
         .expect("top cap");
 

@@ -1108,7 +1108,7 @@ impl Document {
                             && other.is_some_and(|g| {
                                 on.contains(&g)
                                     && obj.faces()[g].material == face.material
-                                    && obj.faces()[g].back_material == face.back_material
+                                    && obj.faces()[g].back_material() == face.back_material()
                                     && obj.face_attrs_eq(g, f)
                             })
                         {
@@ -4730,7 +4730,7 @@ fn hanging_soft_edges(
                 // As the lift tells drawing from the solid's content.
                 let fixed = other.map(|g| {
                     let alike = obj.faces()[g].material == face.material
-                        && obj.faces()[g].back_material == face.back_material
+                        && obj.faces()[g].back_material() == face.back_material()
                         && obj.face_attrs_eq(g, f);
                     (
                         edge.soft || !alike,
@@ -5691,7 +5691,7 @@ impl Document {
                                 g != f
                                     && face_on_plane(obj, g, &plane)
                                     && obj.faces()[g].material == face.material
-                                    && obj.faces()[g].back_material == face.back_material
+                                    && obj.faces()[g].back_material() == face.back_material()
                                     && obj.face_attrs_eq(g, f)
                             })
                 });

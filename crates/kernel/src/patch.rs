@@ -20,7 +20,8 @@ use crate::math::{Plane, Point3};
 use crate::sketch::CurveGeom;
 use crate::tol;
 use crate::topo::{
-    Edge, Face, FaceAttrs, HalfEdge, Loop, LoopKind, Object, Shell, Vertex, WatertightState,
+    Edge, Face, FaceAttrs, HalfEdge, Loop, LoopKind, LoopList, Object, Shell, Vertex,
+    WatertightState,
 };
 
 /// A vertex of a patch: an existing vertex (kept, possibly shared with faces
@@ -264,23 +265,25 @@ impl Object {
         let mut new_faces: Vec<FaceId> = Vec::with_capacity(patch.add.len());
         let mut new_half_edges: Vec<HalfEdgeId> = Vec::new();
         for pf in &patch.add {
-            let face = o.faces.insert(Face {
-                outer_loop: LoopId::default(),
-                inner_loops: Vec::new(),
-                plane: pf.plane.unwrap_or_else(|| {
+            let face = o.faces.insert(Face::new(
+                LoopId::default(),
+                LoopList::new(),
+                pf.plane.unwrap_or_else(|| {
                     Plane::from_point_normal(
                         Point3::new(0.0, 0.0, 0.0),
                         crate::Vec3::new(0.0, 0.0, 1.0),
                     )
                     .expect("unit +Z is a valid normal")
                 }),
-                material: pf.attrs.material,
-                back_material: pf.attrs.back_material,
-                uv_frame: pf.attrs.uv_frame,
-                surface: pf.attrs.surface,
-                blend: pf.attrs.blend,
-                attrs: pf.attrs.attrs,
-            });
+                FaceAttrs {
+                    material: pf.attrs.material,
+                    back_material: pf.attrs.back_material,
+                    uv_frame: pf.attrs.uv_frame,
+                    surface: pf.attrs.surface,
+                    blend: pf.attrs.blend,
+                    attrs: pf.attrs.attrs,
+                },
+            ));
             for (li, lp) in std::iter::once(&pf.outer)
                 .chain(pf.holes.iter())
                 .enumerate()
@@ -663,17 +666,19 @@ impl Object {
         let mut new_half_edges: Vec<HalfEdgeId> = Vec::new();
         for pf in add {
             let plane = pf.plane.expect("checked above");
-            let face = o.faces.insert(Face {
-                outer_loop: LoopId::default(),
-                inner_loops: Vec::new(),
+            let face = o.faces.insert(Face::new(
+                LoopId::default(),
+                LoopList::new(),
                 plane,
-                material: pf.attrs.material,
-                back_material: pf.attrs.back_material,
-                uv_frame: pf.attrs.uv_frame,
-                surface: pf.attrs.surface,
-                blend: pf.attrs.blend,
-                attrs: pf.attrs.attrs,
-            });
+                FaceAttrs {
+                    material: pf.attrs.material,
+                    back_material: pf.attrs.back_material,
+                    uv_frame: pf.attrs.uv_frame,
+                    surface: pf.attrs.surface,
+                    blend: pf.attrs.blend,
+                    attrs: pf.attrs.attrs,
+                },
+            ));
             for (li, lp) in std::iter::once(&pf.outer)
                 .chain(pf.holes.iter())
                 .enumerate()

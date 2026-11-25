@@ -54,7 +54,7 @@ impl Object {
                     .get(slot.0 as usize)
                     .is_some_and(|d| !d.is_empty())
         };
-        if !self.faces.values().all(|f| slot_ok(f.attrs)) {
+        if !self.faces.values().all(|f| slot_ok(f.attr_slot())) {
             return Err(TopologyError::DanglingHandle {
                 context: "face attribute slot",
             });
@@ -645,7 +645,7 @@ impl Object {
         // claims to describe (map-or-drop's enforcement half): the weak
         // per-class conditions every chord facet satisfies
         // (`surface::validate_face_claim`).
-        if let Some(claim) = face.surface {
+        if let Some(claim) = face.surface() {
             let points: Vec<crate::math::Point3> = std::iter::once(face.outer_loop)
                 .chain(face.inner_loops.iter().copied())
                 .flat_map(|l| self.loop_positions(l))
@@ -1329,22 +1329,22 @@ pub(crate) mod tests {
         let f = tet.faces.keys().next().unwrap();
         // Claim a face is a chord facet of a cylinder it cannot be on (its
         // vertices sit farther from the axis than the radius).
-        tet.faces[f].surface = Some(SurfaceRef::Cylinder {
+        tet.faces[f].set_surface(Some(SurfaceRef::Cylinder {
             axis_point: Point3::new(10.0, 10.0, 0.0),
             axis: Vec3::new(0.0, 0.0, 1.0),
             radius: 0.001,
-        });
+        }));
         assert!(matches!(
             tet.validate(),
             Err(TopologyError::FaceSurfaceMismatch { .. })
         ));
 
         // A non-unit axis is caught too.
-        tet.faces[f].surface = Some(SurfaceRef::Cylinder {
+        tet.faces[f].set_surface(Some(SurfaceRef::Cylinder {
             axis_point: Point3::ORIGIN,
             axis: Vec3::new(0.0, 0.0, 2.0),
             radius: 100.0,
-        });
+        }));
         assert!(matches!(
             tet.validate(),
             Err(TopologyError::FaceSurfaceMismatch { .. })

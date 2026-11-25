@@ -39,8 +39,8 @@ fn blend_ok(obj: &Object, s: &BlendSpec) -> (Object, BlendReport) {
     assert_valid_solid(&after);
     for &f in &report.new_faces {
         let face = &after.faces()[f];
-        assert!(face.blend.is_some());
-        if let Some(claim) = face.surface {
+        assert!(face.blend().is_some());
+        if let Some(claim) = face.surface() {
             for p in after.loop_positions(face.outer_loop) {
                 assert!(claim.distance(p).abs() <= kernel::tol::PLANE_DIST);
             }
@@ -60,7 +60,7 @@ fn corner_edges(obj: &Object, c: Point3, others: [Point3; 3]) -> Vec<EdgeId> {
 fn spheres(obj: &Object) -> Vec<SurfaceRef> {
     obj.faces()
         .values()
-        .filter_map(|f| f.surface)
+        .filter_map(|f| f.surface())
         .filter(|s| matches!(s, SurfaceRef::Sphere { .. }))
         .collect()
 }
@@ -88,7 +88,7 @@ fn rolled_box_corner_counts() {
         .faces()
         .values()
         .filter(|f| {
-            f.blend.is_some_and(|t| t.role == BlendRole::Corner)
+            f.blend().is_some_and(|t| t.role == BlendRole::Corner)
                 && after.loop_positions(f.outer_loop).count() == 3
         })
         .count();
@@ -170,7 +170,7 @@ fn flat_chamfer_corner() {
         .iter()
         .filter(|&&f| {
             after.faces()[f]
-                .blend
+                .blend()
                 .is_some_and(|t| t.role == BlendRole::Corner && t.kind == BlendKind::Chamfer)
         })
         .collect();
@@ -211,7 +211,7 @@ fn two_pass_l_inner_corner() {
         after
             .faces()
             .values()
-            .any(|f| matches!(f.surface, Some(SurfaceRef::Torus { .. })))
+            .any(|f| matches!(f.surface(), Some(SurfaceRef::Torus { .. })))
     );
     // The same as doing the two passes by hand.
     let (o1, _) = blend_ok(
@@ -335,8 +335,8 @@ fn hard_inside_blends(obj: &Object) -> Vec<EdgeId> {
         .keys()
         .filter(|&e| {
             let (a, b) = obj.edge_faces_for_test(e).unwrap();
-            obj.faces()[a].blend.is_some()
-                && obj.faces()[b].blend.is_some()
+            obj.faces()[a].blend().is_some()
+                && obj.faces()[b].blend().is_some()
                 && obj.edge_smoothness(e) == kernel::EdgeSmoothness::Hard
         })
         .collect()
@@ -379,7 +379,7 @@ fn a_rolled_corner_borders_its_strips_in_tangent_joints() {
         &obj,
         &spec(all_edges(&obj), round(0.1, 6), CornerStyle::Default),
     );
-    let role = |f| after.faces()[f].blend.map(|t| t.role);
+    let role = |f| after.faces()[f].blend().map(|t| t.role);
     let (mut borders, mut fan) = (0, 0);
     for e in after.edges().keys() {
         let (a, b) = after.edge_faces_for_test(e).unwrap();

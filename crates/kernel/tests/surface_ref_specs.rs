@@ -53,7 +53,7 @@ fn surface_census(obj: &Object) -> (Vec<SurfaceRef>, usize) {
     let mut distinct: Vec<SurfaceRef> = Vec::new();
     let mut carrying = 0;
     for f in obj.faces().values() {
-        if let Some(sr) = f.surface {
+        if let Some(sr) = f.surface() {
             carrying += 1;
             if !distinct.contains(&sr) {
                 distinct.push(sr);
@@ -89,7 +89,11 @@ fn extruded_circle_walls_carry_their_cylinder() {
     assert_eq!(radius, 0.5, "the exact drawn radius, not a chord measure");
 
     // Caps are the two faces with no reference.
-    let caps = obj.faces().values().filter(|f| f.surface.is_none()).count();
+    let caps = obj
+        .faces()
+        .values()
+        .filter(|f| f.surface().is_none())
+        .count();
     assert_eq!(caps, 2);
 }
 
@@ -252,7 +256,7 @@ fn boolean_subtract_inherits_attribution_per_arrangement_fragment() {
         if on_chord_plane {
             wall_fragments += 1;
             assert_eq!(
-                f.surface,
+                f.surface(),
                 Some(expected),
                 "every wall fragment carries the original cylinder"
             );
@@ -265,7 +269,8 @@ fn boolean_subtract_inherits_attribution_per_arrangement_fragment() {
             }
         } else {
             assert_eq!(
-                f.surface, None,
+                f.surface(),
+                None,
                 "fragments of unattributed faces stay unattributed"
             );
         }
@@ -345,10 +350,10 @@ fn seam_dissolve_still_merges_equal_surface_claims() {
     let wall = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(id, _)| id)
         .unwrap();
-    let wall_surface = obj.faces()[wall].surface;
+    let wall_surface = obj.faces()[wall].surface();
 
     // Split the wall at mid-height: two coplanar fragments, equal claims.
     let ring: Vec<Point3> = obj.loop_positions(obj.faces()[wall].outer_loop).collect();
@@ -416,7 +421,7 @@ fn push_pull_on_a_cap_stretches_walls_and_keeps_their_attribution() {
         .faces()
         .iter()
         .find(|(_, f)| {
-            f.surface.is_none() && f.plane.normal().approx_eq(Vec3::new(0.0, 0.0, 1.0), 1e-9)
+            f.surface().is_none() && f.plane.normal().approx_eq(Vec3::new(0.0, 0.0, 1.0), 1e-9)
         })
         .map(|(id, _)| id)
         .unwrap();
@@ -438,7 +443,7 @@ fn extruding_an_imprinted_sub_face_drops_its_inherited_claim() {
     let wall = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(id, _)| id)
         .unwrap();
     let plane = obj.faces()[wall].plane;
@@ -465,17 +470,17 @@ fn extruding_an_imprinted_sub_face_drops_its_inherited_claim() {
     let report = obj.split_face_inner(wall, &loop_path).unwrap();
     // The imprinted sub-face inherits the wall's claim (same chord plane).
     assert_eq!(
-        obj.faces()[report.sub_face].surface,
-        obj.faces()[wall].surface,
+        obj.faces()[report.sub_face].surface(),
+        obj.faces()[wall].surface(),
         "imprint inherits"
     );
 
     // Raising it moves it off the chord plane: the claim drops.
     obj.extrude_sub_face(report.sub_face, 0.02).unwrap();
     obj.validate().unwrap();
-    assert_eq!(obj.faces()[report.sub_face].surface, None);
+    assert_eq!(obj.faces()[report.sub_face].surface(), None);
     assert!(
-        obj.faces()[wall].surface.is_some(),
+        obj.faces()[wall].surface().is_some(),
         "the parent keeps its own"
     );
 }
@@ -533,7 +538,7 @@ fn dist_to_axis(p: Point3, axis_point: Point3) -> f64 {
 fn any_wall(obj: &Object) -> kernel::FaceId {
     obj.faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(fid, _)| fid)
         .expect("an attributed wall exists")
 }
@@ -564,7 +569,7 @@ fn wall_offset_outward_grows_the_whole_cylinder() {
     assert_eq!(radius, 0.75, "surface reference maps to the offset radius");
 
     // And the carrier agrees: every wall vertex sits on the new cylinder.
-    for f in obj.faces().values().filter(|f| f.surface.is_some()) {
+    for f in obj.faces().values().filter(|f| f.surface().is_some()) {
         for p in obj.loop_positions(f.outer_loop) {
             assert!(
                 (dist_to_axis(p, center) - 0.75).abs() <= tol::POINT_MERGE,
@@ -725,7 +730,7 @@ fn d_profile_chord_wall_translates_with_the_arc() {
         .values()
         .find(|f| f.plane.normal().approx_eq(Vec3::new(0.0, -1.0, 0.0), 1e-9))
         .expect("chord wall survives");
-    assert_eq!(chord.surface, None);
+    assert_eq!(chord.surface(), None);
     for pnt in obj.loop_positions(chord.outer_loop) {
         assert!((pnt.x.abs() - 1.5).abs() <= tol::POINT_MERGE || pnt.x.abs() <= 1.5);
     }
@@ -810,7 +815,7 @@ fn bossed_neighbor_wall_refuses_the_offset_typed() {
         .faces()
         .iter()
         .find(|(_, f)| {
-            f.surface.is_none() && f.plane.normal().approx_eq(Vec3::new(1.0, 0.0, 0.0), 1e-9)
+            f.surface().is_none() && f.plane.normal().approx_eq(Vec3::new(1.0, 0.0, 0.0), 1e-9)
         })
         .map(|(fid, _)| fid)
         .expect("tangent wall at x = 2");
@@ -913,7 +918,7 @@ fn drilled_cylinder_offsets_outer_and_hole_walls_independently() {
         .faces()
         .iter()
         .find(|(_, f)| {
-            matches!(f.surface, Some(SurfaceRef::Cylinder { radius, .. }) if (radius - 1.0).abs() < 1e-12)
+            matches!(f.surface(), Some(SurfaceRef::Cylinder { radius, .. }) if (radius - 1.0).abs() < 1e-12)
         })
         .map(|(fid, _)| fid)
         .unwrap();
@@ -938,7 +943,7 @@ fn drilled_cylinder_offsets_outer_and_hole_walls_independently() {
         .faces()
         .iter()
         .find(|(_, f)| {
-            matches!(f.surface, Some(SurfaceRef::Cylinder { radius, .. }) if (radius - 0.4).abs() < 1e-12)
+            matches!(f.surface(), Some(SurfaceRef::Cylinder { radius, .. }) if (radius - 0.4).abs() < 1e-12)
         })
         .map(|(fid, _)| fid)
         .unwrap();
@@ -969,7 +974,7 @@ fn cap_imprint_blocks_a_shrink_that_would_orphan_it() {
     let top_cap = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_none() && f.plane.normal().z > 0.5)
+        .find(|(_, f)| f.surface().is_none() && f.plane.normal().z > 0.5)
         .map(|(fid, _)| fid)
         .unwrap();
     let d = 0.55; // square imprint reaching to |x|,|y| = 0.55 (inside r=1)

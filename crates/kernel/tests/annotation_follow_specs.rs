@@ -374,7 +374,7 @@ fn a_cylinder_wall_push_detaches_only_anchors_off_the_new_surface() {
         .unwrap()
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(id, _)| id)
         .expect("a wall facet");
     let at = centroid(&doc, o, wall);

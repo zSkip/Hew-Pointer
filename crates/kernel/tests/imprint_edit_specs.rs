@@ -1707,7 +1707,11 @@ fn pushing_a_shape_around_a_circle_raises_a_smooth_cylinder_that_stays_a_circle(
     .unwrap();
     let obj = doc.object(id).unwrap();
     obj.validate().unwrap();
-    let stamped = obj.faces().values().filter(|f| f.surface.is_some()).count();
+    let stamped = obj
+        .faces()
+        .values()
+        .filter(|f| f.surface().is_some())
+        .count();
     assert_eq!(
         stamped, 48,
         "every wall around the circle is a cylinder facet"
@@ -1732,7 +1736,10 @@ fn pushing_a_shape_around_a_circle_raises_a_smooth_cylinder_that_stays_a_circle(
     let obj = doc.object(id).unwrap();
     obj.validate().unwrap();
     assert_eq!(
-        obj.faces().values().filter(|f| f.surface.is_some()).count(),
+        obj.faces()
+            .values()
+            .filter(|f| f.surface().is_some())
+            .count(),
         48,
         "the raised cylinder is still smooth"
     );

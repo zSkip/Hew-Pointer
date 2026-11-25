@@ -2639,8 +2639,8 @@ fn build_swept(
     let material = (fa.material == fb.material)
         .then_some(fa.material)
         .flatten();
-    let back_material = (fa.back_material == fb.back_material)
-        .then_some(fa.back_material)
+    let back_material = (fa.back_material() == fb.back_material())
+        .then_some(fa.back_material())
         .flatten();
     let soft = EdgeMeta {
         soft: true,

@@ -233,7 +233,7 @@ pub fn offset_face_boundary(
                 axis_point,
                 axis,
                 radius,
-            }) = object.faces()[neighbor].surface
+            }) = object.faces()[neighbor].surface()
             else {
                 return None;
             };

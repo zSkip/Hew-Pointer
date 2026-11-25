@@ -208,7 +208,7 @@ fn rederive_edges(
             &[]
         };
         let crease = sources.iter().any(|s| s.crease && along(s));
-        let (sa, sb) = (result.faces()[fa].surface, result.faces()[fb].surface);
+        let (sa, sb) = (result.faces()[fa].surface(), result.faces()[fb].surface());
         let same_claim = matches!((sa, sb), (Some(x), Some(y)) if x.same_surface(&y));
         let soft = !crease && (same_claim || sources.iter().any(|s| s.soft && along(s)));
         let on_circle = |g: &CurveGeom, t: f64| {

@@ -602,7 +602,7 @@ fn clip_vertex(
         .collect();
     if all_faces.iter().any(|&f| {
         let face = &obj.faces()[f];
-        face.surface.is_some() || face.blend.is_some()
+        face.surface().is_some() || face.blend().is_some()
     }) {
         return Ok(false);
     }
@@ -1192,7 +1192,7 @@ fn rolled_corner(
         });
     }
     let refaceted = resection.iter().any(Option::is_some);
-    if !refaceted && faces.iter().any(|&f| obj.faces()[f].surface.is_some()) {
+    if !refaceted && faces.iter().any(|&f| obj.faces()[f].surface().is_some()) {
         return Ok(false);
     }
     let at = obj.vertices()[v].position;

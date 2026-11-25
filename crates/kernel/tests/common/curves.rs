@@ -347,7 +347,7 @@ pub fn signed_volume(obj: &Object) -> f64 {
 pub fn claim_census(obj: &Object) -> BTreeMap<&'static str, usize> {
     let mut m = BTreeMap::new();
     for f in obj.faces().values() {
-        let k = f.surface.map_or("none", |s| s.kind_name());
+        let k = f.surface().map_or("none", |s| s.kind_name());
         *m.entry(k).or_insert(0) += 1;
     }
     m
@@ -768,7 +768,7 @@ pub fn app_pipe_tee_sized(
         .find(|&e| {
             let (a, b) = obj.edge_faces_for_test(e).unwrap();
             matches!(
-                (obj.faces()[a].surface, obj.faces()[b].surface),
+                (obj.faces()[a].surface(), obj.faces()[b].surface()),
                 (Some(SurfaceRef::Cylinder { axis: p, .. }), Some(SurfaceRef::Cylinder { axis: q, .. }))
                     if p.dot(q).abs() < 0.5
             )

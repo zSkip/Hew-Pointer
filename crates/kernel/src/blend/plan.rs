@@ -1116,8 +1116,8 @@ fn strip_faces(
     } else {
         None
     };
-    let back_material = if fa.back_material == fb.back_material {
-        fa.back_material
+    let back_material = if fa.back_material() == fb.back_material() {
+        fa.back_material()
     } else {
         None
     };
@@ -1459,7 +1459,7 @@ fn rim_checks(obj: &Object, s: &mut Strip, pts: &mut Pts, out: &mut Out) -> Resu
         let info = &s.chain.edges[i];
         for (side, seg) in [(0usize, sec.seg_a), (1, sec.seg_b)] {
             let f = if side == 0 { info.a } else { info.b };
-            if obj.faces()[f].surface.is_some() && seg > 0 {
+            if obj.faces()[f].surface().is_some() && seg > 0 {
                 return Err(PlanFail::Size(LimitFeature::FacetWidth));
             }
         }
@@ -1468,7 +1468,7 @@ fn rim_checks(obj: &Object, s: &mut Strip, pts: &mut Pts, out: &mut Out) -> Resu
             if major < -tol::POINT_MERGE {
                 return Err(PlanFail::Size(LimitFeature::RimRadius));
             }
-            let side = if obj.faces()[info.a].surface.is_none() {
+            let side = if obj.faces()[info.a].surface().is_none() {
                 0
             } else {
                 1
@@ -1566,8 +1566,8 @@ fn corner_faces(
                 } else {
                     None
                 },
-                if fa.back_material == fb.back_material {
-                    fa.back_material
+                if fa.back_material() == fb.back_material() {
+                    fa.back_material()
                 } else {
                     None
                 },
@@ -1661,7 +1661,7 @@ pub(crate) fn bullnose_frame(
         obj.faces()[s1].plane.normal(),
         obj.faces()[s2].plane.normal(),
     );
-    let flat = |f: FaceId| obj.faces()[f].surface.is_none();
+    let flat = |f: FaceId| obj.faces()[f].surface().is_none();
     if !(flat(common) && flat(s1) && flat(s2))
         || !face.inner_loops.is_empty()
         || i1.d_a.dot(i2.d_a).abs() < 1.0 - tol::NORMAL_DIRECTION
@@ -1839,8 +1839,8 @@ fn plan_bullnose(
     let material = (fa.material == fb.material)
         .then_some(fa.material)
         .flatten();
-    let back_material = (fa.back_material == fb.back_material)
-        .then_some(fa.back_material)
+    let back_material = (fa.back_material() == fb.back_material())
+        .then_some(fa.back_material())
         .flatten();
     let c_mid = centers[0].to_vec() * 0.5 + centers[1].to_vec() * 0.5;
     let claim = SurfaceRef::Cylinder {

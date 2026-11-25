@@ -258,7 +258,7 @@ impl Surface {
                     // surface or none (a disc's rim, a pipe's end cap),
                     // where the ball would ride that edge instead of
                     // rolling on the side (D-229).
-                    let same_surface = match (obj.faces()[f].surface, obj.faces()[g].surface) {
+                    let same_surface = match (obj.faces()[f].surface(), obj.faces()[g].surface()) {
                         (None, None) => true,
                         (Some(a), Some(b)) => a.same_surface(&b),
                         _ => false,

@@ -107,7 +107,7 @@ impl Object {
         let plain = |f: FaceId| {
             self.faces()
                 .get(f)
-                .is_some_and(|x| x.surface.is_none() && x.blend.is_none())
+                .is_some_and(|x| x.surface().is_none() && x.blend().is_none())
         };
         let mut work: Option<Object> = None;
         let mut made: Vec<SurfaceRef> = Vec::new();
@@ -148,7 +148,7 @@ impl Object {
                     if plain(band)
                         && band_claim(self, band, circle).is_some_and(|c| c.same_surface(&claim))
                     {
-                        obj.faces[band].surface = Some(claim);
+                        obj.faces[band].set_surface(Some(claim));
                     }
                 }
                 made.push(claim);
@@ -167,14 +167,14 @@ pub(crate) fn drop_rim_claims(base: &Object, after: &mut Object, claims: &[Surfa
         .faces()
         .iter()
         .filter(|(id, f)| {
-            f.blend.is_none()
-                && f.surface
+            f.blend().is_none()
+                && f.surface()
                     .is_some_and(|s| claims.iter().any(|c| c.same_surface(&s)))
-                && base.faces().get(*id).is_none_or(|b| b.surface.is_none())
+                && base.faces().get(*id).is_none_or(|b| b.surface().is_none())
         })
         .map(|(id, _)| id)
         .collect();
     for id in ids {
-        after.faces[id].surface = None;
+        after.faces[id].set_surface(None);
     }
 }

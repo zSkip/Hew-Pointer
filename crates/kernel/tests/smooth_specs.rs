@@ -395,7 +395,7 @@ fn crease_on_a_blends_soft_joint_refused() {
     )
     .unwrap();
     let obj = doc.object(o).unwrap();
-    let role = |f| obj.faces()[f].blend.map(|t| t.role);
+    let role = |f| obj.faces()[f].blend().map(|t| t.role);
     let border = obj
         .edges()
         .keys()

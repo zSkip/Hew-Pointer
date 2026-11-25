@@ -787,7 +787,7 @@ pub(crate) fn topology_block(
             .iter()
             .map(|&l| obj.loop_positions(l).map(map_p).collect())
             .collect();
-        let surface = match (f.surface, scale) {
+        let surface = match (f.surface(), scale) {
             (
                 Some(kernel::SurfaceRef::Cylinder {
                     axis_point,
@@ -812,7 +812,7 @@ pub(crate) fn topology_block(
             "outer": loop_vertices(f.outer_loop),
             "holes": f.inner_loops.iter().map(|&l| loop_vertices(l)).collect::<Vec<_>>(),
             "material": material_id(f.material),
-            "back_material": material_id(f.back_material),
+            "back_material": material_id(f.back_material()),
             "surface": surface,
             "area": crate::geom::face_area(&outer, &holes),
             "attrs": super::attrs::element_attrs_json(obj.face_attrs(fid)),
@@ -832,7 +832,7 @@ pub(crate) fn topology_block(
             (Some(c), Some(s)) => {
                 let axis = adjacent
                     .iter()
-                    .find_map(|f| match obj.faces()[*f].surface {
+                    .find_map(|f| match obj.faces()[*f].surface() {
                         Some(kernel::SurfaceRef::Cylinder { axis, .. }) => {
                             Some(pose.apply_vector(axis))
                         }

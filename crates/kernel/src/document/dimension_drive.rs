@@ -392,7 +392,7 @@ impl Document {
         let obj = &self.objects[object].object;
         let mut found: Option<FacePlan> = None;
         for (fid, f) in obj.faces() {
-            if f.surface.is_some() || obj.blend_of_face(fid).is_some() {
+            if f.surface().is_some() || obj.blend_of_face(fid).is_some() {
                 continue;
             }
             let normal = f.plane.normal();

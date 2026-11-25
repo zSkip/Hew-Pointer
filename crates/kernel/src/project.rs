@@ -603,7 +603,7 @@ impl Object {
         }
         for &f in &region {
             let face = &self.faces()[f];
-            if face.surface.is_some() && offset_claim(self, f, spec.depth).is_none() {
+            if face.surface().is_some() && offset_claim(self, f, spec.depth).is_none() {
                 return Err(ShapeError::WallTooThick {
                     at: self.vertices()
                         [self.half_edges()[self.loops()[face.outer_loop].first_half_edge].origin]

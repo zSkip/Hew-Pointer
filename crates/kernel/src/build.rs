@@ -15,8 +15,8 @@ use crate::material::{FaceMaterial, UvFrame};
 use crate::math::{Plane, Point3};
 use crate::tol;
 use crate::topo::{
-    AttrSlot, Edge, Face, HalfEdge, Loop, LoopKind, Object, Shell, SurfaceRef, Vertex,
-    WatertightState,
+    AttrSlot, Edge, Face, FaceAttrs, HalfEdge, Loop, LoopKind, LoopList, Object, Shell, SurfaceRef,
+    Vertex, WatertightState,
 };
 
 /// One face for [`Object::from_faces_with_holes`]: outer indices, hole
@@ -373,20 +373,22 @@ impl Object {
                 first_half_edge: HalfEdgeId::default(),
                 kind: LoopKind::Outer,
             });
-            let face_id = obj.faces.insert(Face {
-                outer_loop: outer_loop_id,
-                inner_loops: Vec::new(),
+            let face_id = obj.faces.insert(Face::new(
+                outer_loop_id,
+                LoopList::new(),
                 plane,
-                material: materials.and_then(|m| m.get(face_index).copied()).flatten(),
-                back_material: None,
-                uv_frame: uv_frames.and_then(|f| f.get(face_index).copied()).flatten(),
-                surface: surfaces.and_then(|s| s.get(face_index).copied()).flatten(),
-                blend: None,
-                attrs: AttrSlot::NONE,
-            });
+                FaceAttrs {
+                    material: materials.and_then(|m| m.get(face_index).copied()).flatten(),
+                    back_material: None,
+                    uv_frame: uv_frames.and_then(|f| f.get(face_index).copied()).flatten(),
+                    surface: surfaces.and_then(|s| s.get(face_index).copied()).flatten(),
+                    blend: None,
+                    attrs: AttrSlot::NONE,
+                },
+            ));
             if let Some(dict) = attrs.and_then(|a| a.get(face_index)) {
                 let slot = obj.intern_attrs(dict.clone());
-                obj.faces[face_id].attrs = slot;
+                obj.faces[face_id].set_attr_slot(slot);
             }
             obj.loops[outer_loop_id].face = face_id;
             build_validated_loop(
@@ -479,7 +481,7 @@ impl Object {
     /// they were built (a fresh object's faces iterate in insertion order).
     pub(crate) fn set_built_back_materials(&mut self, backs: &[FaceMaterial]) {
         for ((_, f), &b) in self.faces.iter_mut().zip(backs) {
-            f.back_material = b;
+            f.set_back_material(b);
         }
     }
 
@@ -489,7 +491,7 @@ impl Object {
     /// back materials ([`Object::set_built_back_materials`]).
     pub(crate) fn set_built_blends(&mut self, blends: &[Option<crate::topo::BlendTag>]) {
         for ((_, f), &b) in self.faces.iter_mut().zip(blends) {
-            f.blend = b;
+            f.set_blend(b);
         }
     }
 
@@ -539,20 +541,22 @@ impl Object {
                 kind: LoopKind::Outer,
             });
 
-            let face_id = obj.faces.insert(Face {
-                outer_loop: outer_loop_id,
-                inner_loops: Vec::new(),
-                plane: *plane,
-                material: *material,
-                back_material: None,
-                uv_frame: *uv_frame,
-                surface: *surface,
-                blend: None,
-                attrs: AttrSlot::NONE,
-            });
+            let face_id = obj.faces.insert(Face::new(
+                outer_loop_id,
+                LoopList::new(),
+                *plane,
+                FaceAttrs {
+                    material: *material,
+                    back_material: None,
+                    uv_frame: *uv_frame,
+                    surface: *surface,
+                    blend: None,
+                    attrs: AttrSlot::NONE,
+                },
+            ));
             if !attrs.is_empty() {
                 let slot = obj.intern_attrs(attrs.clone());
-                obj.faces[face_id].attrs = slot;
+                obj.faces[face_id].set_attr_slot(slot);
             }
             obj.loops[outer_loop_id].face = face_id;
             all_face_ids.push(face_id);
@@ -1052,7 +1056,7 @@ impl Object {
                         .all(|p| (dist(p) - radius).abs() <= tol)
                 };
                 if let Some(s) = extra.surfaces.iter().find(|s| fits(s)) {
-                    self.faces[f].surface = Some(*s);
+                    self.faces[f].set_surface(Some(*s));
                 }
             }
         }

@@ -1953,7 +1953,7 @@ fn equal_radius_tee(doc: &mut Document) -> (ObjectId, Vec<(Point3, Point3)>) {
         .find(|&e| {
             let (a, b) = obj.edge_faces_for_test(e).unwrap();
             matches!(
-                (obj.faces()[a].surface, obj.faces()[b].surface),
+                (obj.faces()[a].surface(), obj.faces()[b].surface()),
                 (Some(SurfaceRef::Cylinder { axis: p, .. }), Some(SurfaceRef::Cylinder { axis: q, .. }))
                     if p.dot(q).abs() < 0.5
             )

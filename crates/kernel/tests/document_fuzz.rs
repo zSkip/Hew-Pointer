@@ -1694,9 +1694,13 @@ fn doc_fingerprint(doc: &Document) -> String {
                 ring.sort_unstable();
                 // A Move maps the frame, so its undo carries float noise.
                 let frame = f
-                    .uv_frame
+                    .uv_frame()
                     .map(|u| [u.s.x, u.s.y, u.s.z, u.t.x, u.t.y, u.t.z, u.u0, u.v0].map(q));
-                format!("{ring:?}:{:?}/{:?}/{frame:?}", f.material, f.back_material)
+                format!(
+                    "{ring:?}:{:?}/{:?}/{frame:?}",
+                    f.material,
+                    f.back_material()
+                )
             })
             .collect();
         paint.sort_unstable();

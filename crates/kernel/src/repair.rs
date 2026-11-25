@@ -23,7 +23,9 @@ use crate::health::{Finding, Rim, diagnose};
 use crate::ids::{FaceId, HalfEdgeId, LoopId, ShellId, VertexId};
 use crate::math::{Plane, Point3, Vec3};
 use crate::tol;
-use crate::topo::{AttrSlot, Face, HalfEdge, Loop, LoopKind, Object, WatertightState};
+use crate::topo::{
+    AttrSlot, Face, FaceAttrs, HalfEdge, Loop, LoopKind, LoopList, Object, WatertightState,
+};
 
 /// The thinnest solid [`Object::thicken_sheet`] makes: a micron, far above
 /// the point-merge tolerance its walls' corners must clear, far below any
@@ -417,17 +419,19 @@ impl Object {
                 continue;
             }
             let rim = &d.rims[r];
-            let face = obj.faces.insert(Face {
-                outer_loop: LoopId::default(),
-                inner_loops: Vec::new(),
-                plane: caps[&r].plane,
-                material: None,
-                back_material: None,
-                uv_frame: None,
-                surface: None,
-                blend: None,
-                attrs: AttrSlot::NONE,
-            });
+            let face = obj.faces.insert(Face::new(
+                LoopId::default(),
+                LoopList::new(),
+                caps[&r].plane,
+                FaceAttrs {
+                    material: None,
+                    back_material: None,
+                    uv_frame: None,
+                    surface: None,
+                    blend: None,
+                    attrs: AttrSlot::NONE,
+                },
+            ));
             let outer = obj.add_cap_loop(&rim.half_edges, face, LoopKind::Outer);
             obj.faces[face].outer_loop = outer;
             for &h in holes.get(&r).map(Vec::as_slice).unwrap_or_default() {
@@ -625,7 +629,7 @@ impl Object {
                 // The lower copy faces the way the sheet's back did, and
                 // shows the back's paint.
                 let material = if by == lo {
-                    face.back_material.or(face.material)
+                    face.back_material().or(face.material)
                 } else {
                     face.material
                 };
@@ -634,7 +638,7 @@ impl Object {
                     rings,
                     plane,
                     material,
-                    shifted(face.uv_frame, by),
+                    shifted(face.uv_frame(), by),
                     None,
                     // Both copies are the sheet's face, dictionary included.
                     self.face_attrs(f).cloned().unwrap_or_default(),

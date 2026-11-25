@@ -125,7 +125,7 @@ fn candidate_hashes(
             }
             loops.push(ring);
         }
-        let surface = match (f.surface, pose.similarity_scale()) {
+        let surface = match (f.surface(), pose.similarity_scale()) {
             (Some(kernel::SurfaceRef::Cylinder { axis, radius, .. }), Some(s)) => {
                 Some(WorldSurface::Cylinder(pose.apply_vector(axis), radius * s))
             }
@@ -160,7 +160,7 @@ fn candidate_hashes(
             )),
             _ => None,
         };
-        let blend = f.blend.map(|t| {
+        let blend = f.blend().map(|t| {
             let kind = match t.kind {
                 kernel::BlendKind::Fillet => 0,
                 kernel::BlendKind::Chamfer => 1,

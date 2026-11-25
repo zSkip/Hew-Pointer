@@ -86,7 +86,7 @@ fn revolve_region(
 }
 
 fn claims(o: &Object) -> Vec<SurfaceRef> {
-    o.faces().values().filter_map(|f| f.surface).collect()
+    o.faces().values().filter_map(|f| f.surface()).collect()
 }
 
 #[test]
@@ -107,7 +107,7 @@ fn rectangle_on_axis_is_cylinder() {
         assert!((radius - 0.5).abs() <= 1e-9);
     }
     // Every unclaimed face is a cap facet, planar and horizontal.
-    for f in o.faces().values().filter(|f| f.surface.is_none()) {
+    for f in o.faces().values().filter(|f| f.surface().is_none()) {
         assert!(f.plane.normal().z.abs() > 1.0 - 1e-9);
     }
     let v = signed_volume(o);
@@ -139,7 +139,7 @@ fn offset_rectangle_is_tube() {
     assert!(
         o.faces()
             .values()
-            .filter(|f| f.surface.is_none())
+            .filter(|f| f.surface().is_none())
             .all(|f| f.plane.normal().z.abs() > 1.0 - 1e-9)
     );
 }
@@ -268,7 +268,7 @@ fn partial_90_has_planar_end_caps() {
     let caps: Vec<_> = o
         .faces()
         .values()
-        .filter(|f| f.surface.is_none() && f.plane.normal().z.abs() < 1e-9)
+        .filter(|f| f.surface().is_none() && f.plane.normal().z.abs() < 1e-9)
         .collect();
     assert_eq!(
         claim_census(o).get("cylinder"),

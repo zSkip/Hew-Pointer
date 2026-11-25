@@ -1139,7 +1139,7 @@ fn follow_me_straight_sweep_of_a_circle_is_a_stamped_cylinder() {
         .faces()
         .values()
         .filter(|f| {
-            f.surface
+            f.surface()
                 .as_ref()
                 .is_some_and(|s| s.same_surface(&expected))
         })
@@ -1187,7 +1187,7 @@ fn follow_me_collinear_joints_sweep_like_one_segment() {
         .faces()
         .values()
         .filter(|f| {
-            f.surface
+            f.surface()
                 .as_ref()
                 .is_some_and(|s| s.same_surface(&expected_cyl))
         })
@@ -1227,7 +1227,11 @@ fn follow_me_bent_sweep_stamps_cylinders_per_segment() {
         solid
             .faces()
             .values()
-            .filter(|f| f.surface.as_ref().is_some_and(|s| s.same_surface(expected)))
+            .filter(|f| {
+                f.surface()
+                    .as_ref()
+                    .is_some_and(|s| s.same_surface(expected))
+            })
             .count()
     };
     assert_eq!(count(&along_x), 24);
@@ -5211,7 +5215,7 @@ fn follow_me_marks_soft_joints_and_stamps_band_cylinders() {
     let stamped = ring
         .faces()
         .values()
-        .filter(|f| f.surface.is_some())
+        .filter(|f| f.surface().is_some())
         .count();
     assert!(
         stamped >= 24,
@@ -5490,7 +5494,7 @@ fn follow_me_softens_the_profile_circumference_on_turns() {
         soft, interior,
         "every interior edge of a smooth torus is soft ({soft}/{interior})"
     );
-    let claims: Vec<SurfaceRef> = torus.faces().values().filter_map(|f| f.surface).collect();
+    let claims: Vec<SurfaceRef> = torus.faces().values().filter_map(|f| f.surface()).collect();
     assert_eq!(
         claims.len(),
         torus.faces().len(),
@@ -5547,14 +5551,14 @@ fn follow_me_sphere_is_smooth_in_both_directions() {
         soft, interior,
         "every interior edge of a sphere is soft ({soft}/{interior})"
     );
-    let first = sphere.faces().values().next().unwrap().surface;
+    let first = sphere.faces().values().next().unwrap().surface();
     for f in sphere.faces().values() {
-        let Some(SurfaceRef::Sphere { radius, .. }) = f.surface else {
-            panic!("expected a sphere claim, got {:?}", f.surface)
+        let Some(SurfaceRef::Sphere { radius, .. }) = f.surface() else {
+            panic!("expected a sphere claim, got {:?}", f.surface())
         };
         assert!((radius - 1.0).abs() <= 1e-9);
         assert!(
-            f.surface.unwrap().same_surface(&first.unwrap()),
+            f.surface().unwrap().same_surface(&first.unwrap()),
             "one sphere"
         );
     }

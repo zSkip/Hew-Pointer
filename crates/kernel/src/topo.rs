@@ -425,13 +425,138 @@ pub struct FaceAttrs {
     pub attrs: AttrSlot,
 }
 
+impl Default for FaceAttrs {
+    /// No attributes: default material, nothing else set.
+    fn default() -> Self {
+        FaceAttrs {
+            material: None,
+            back_material: None,
+            uv_frame: None,
+            surface: None,
+            blend: None,
+            attrs: AttrSlot::NONE,
+        }
+    }
+}
+
+/// A face's hole boundaries ([`Face::inner_loops`]): a list of loop
+/// handles that takes one pointer while empty, which almost every face is
+/// (a triangle of an imported mesh never has a hole). Reads like a slice;
+/// writes go through [`LoopList::push`], [`LoopList::retain`] and
+/// [`LoopList::clear`], which keep the order a `Vec` would.
+#[derive(Clone, Default, PartialEq, Eq)]
+// The box is the point: `Option<Box<Vec>>` is one pointer on the face, where
+// a `Vec` would be three on every face of a dense mesh, nearly all empty.
+#[allow(clippy::box_collection)]
+pub struct LoopList(Option<Box<Vec<LoopId>>>);
+
+impl LoopList {
+    /// An empty list (no allocation).
+    pub const fn new() -> Self {
+        LoopList(None)
+    }
+
+    /// Appends a loop.
+    pub fn push(&mut self, l: LoopId) {
+        self.0.get_or_insert_with(Box::default).push(l);
+    }
+
+    /// Keeps only the loops `keep` accepts, in order.
+    pub fn retain(&mut self, keep: impl FnMut(&LoopId) -> bool) {
+        if let Some(v) = &mut self.0 {
+            v.retain(keep);
+            if v.is_empty() {
+                self.0 = None;
+            }
+        }
+    }
+
+    /// Removes every loop.
+    pub fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl std::ops::Deref for LoopList {
+    type Target = [LoopId];
+    fn deref(&self) -> &[LoopId] {
+        self.0.as_deref().map_or(&[], Vec::as_slice)
+    }
+}
+
+impl std::fmt::Debug for LoopList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl From<Vec<LoopId>> for LoopList {
+    fn from(v: Vec<LoopId>) -> Self {
+        if v.is_empty() {
+            LoopList(None)
+        } else {
+            LoopList(Some(Box::new(v)))
+        }
+    }
+}
+
+impl FromIterator<LoopId> for LoopList {
+    fn from_iter<I: IntoIterator<Item = LoopId>>(iter: I) -> Self {
+        LoopList::from(iter.into_iter().collect::<Vec<_>>())
+    }
+}
+
+impl IntoIterator for LoopList {
+    type Item = LoopId;
+    type IntoIter = std::vec::IntoIter<LoopId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.map(|v| *v).unwrap_or_default().into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a LoopList {
+    type Item = &'a LoopId;
+    type IntoIter = std::slice::Iter<'a, LoopId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// The face fields almost no face sets, kept out of line so a plain face
+/// pays one pointer for all of them (see [`Face`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FaceExtra {
+    back_material: FaceMaterial,
+    uv_frame: Option<UvFrame>,
+    surface: Option<SurfaceRef>,
+    blend: Option<BlendTag>,
+    attr_slot: AttrSlot,
+}
+
+impl FaceExtra {
+    const NONE: FaceExtra = FaceExtra {
+        back_material: None,
+        uv_frame: None,
+        surface: None,
+        blend: None,
+        attr_slot: AttrSlot::NONE,
+    };
+}
+
 /// A planar polygonal face; holes are represented as inner loops.
+///
+/// The fields most faces leave unset (back material, UV frame, surface
+/// reference, blend tag, attribute dictionary) live in one optional box,
+/// read through [`Face::back_material`], [`Face::uv_frame`],
+/// [`Face::surface`], [`Face::blend`] and [`Face::attr_slot`] and written
+/// through the matching `set_*`; the box exists only while one of them is
+/// set. This keeps a face of a dense imported mesh small.
 #[derive(Debug, Clone)]
 pub struct Face {
     /// The outer boundary.
     pub outer_loop: LoopId,
-    /// Hole boundaries (empty in M0; the builder does not create holes yet).
-    pub inner_loops: Vec<LoopId>,
+    /// Hole boundaries.
+    pub inner_loops: LoopList,
     /// The supporting plane, oriented so the outer loop winds CCW seen from
     /// the normal side.
     pub plane: Plane,
@@ -441,23 +566,96 @@ pub struct Face {
     /// boolean's result faces inherit their source face's; freshly extruded
     /// side walls default to `None`.
     pub material: FaceMaterial,
+    /// The rarely set fields; `None` while all of them are unset.
+    extra: Option<Box<FaceExtra>>,
+}
+
+impl Face {
+    /// A face with the given boundary, plane and attributes.
+    pub fn new(outer_loop: LoopId, inner_loops: LoopList, plane: Plane, attrs: FaceAttrs) -> Self {
+        let mut f = Face {
+            outer_loop,
+            inner_loops,
+            plane,
+            material: None,
+            extra: None,
+        };
+        f.set_attrs(attrs);
+        f
+    }
+
+    /// The bytes this face holds outside its table slot: the rare-field
+    /// box and the hole list (zero for a plain face without holes).
+    pub(crate) fn heap_bytes(&self) -> usize {
+        let extra = self
+            .extra
+            .as_ref()
+            .map_or(0, |_| std::mem::size_of::<FaceExtra>());
+        let holes = self.inner_loops.0.as_ref().map_or(0, |v| {
+            std::mem::size_of::<Vec<LoopId>>() + v.capacity() * std::mem::size_of::<LoopId>()
+        });
+        extra + holes
+    }
+
+    fn extra(&self) -> &FaceExtra {
+        self.extra.as_deref().unwrap_or(&FaceExtra::NONE)
+    }
+
+    /// Applies `edit` to the rare fields, allocating the box when one
+    /// becomes set and freeing it when all are unset again.
+    fn update_extra(&mut self, edit: impl FnOnce(&mut FaceExtra)) {
+        let mut e = *self.extra();
+        edit(&mut e);
+        if e == FaceExtra::NONE {
+            self.extra = None;
+        } else if let Some(b) = &mut self.extra {
+            **b = e;
+        } else {
+            self.extra = Some(Box::new(e));
+        }
+    }
+
     /// The paint on the face's back side, or `None` when the back shows
     /// what the front shows (every face Hew itself makes). A `.skp` face
     /// can be painted on each side; its back paint is drawn only where the
     /// back can be seen (an open shell, a cut). Carried with `material`:
     /// a split's children and a boolean's result faces take their
     /// parent's or source face's.
-    pub back_material: FaceMaterial,
+    pub fn back_material(&self) -> FaceMaterial {
+        self.extra().back_material
+    }
+
+    /// Sets [`Face::back_material`].
+    pub fn set_back_material(&mut self, m: FaceMaterial) {
+        self.update_extra(|e| e.back_material = m);
+    }
+
     /// Per-face affine UV frame (ARCHITECTURE.md extension). When `Some`, the
     /// tessellator uses `frame.apply(p)` instead of the  `world_size`
     /// planar projection. Propagated alongside `material` in face-creating ops
     /// (split children and boolean result faces inherit the parent/source frame;
     /// freshly extruded side walls default to `None`).
-    pub uv_frame: Option<UvFrame>,
+    pub fn uv_frame(&self) -> Option<UvFrame> {
+        self.extra().uv_frame
+    }
+
+    /// Sets [`Face::uv_frame`].
+    pub fn set_uv_frame(&mut self, f: Option<UvFrame>) {
+        self.update_extra(|e| e.uv_frame = f);
+    }
+
     /// The analytic surface this face is a chord facet of, when known (an
     /// extruded arc/circle side wall). See [`SurfaceRef`] for the
     /// propagation (map-or-drop) contract. Persisted in geometry buffer v4.
-    pub surface: Option<SurfaceRef>,
+    pub fn surface(&self) -> Option<SurfaceRef> {
+        self.extra().surface
+    }
+
+    /// Sets [`Face::surface`].
+    pub fn set_surface(&mut self, s: Option<SurfaceRef>) {
+        self.update_extra(|e| e.surface = s);
+    }
+
     /// The blend this face belongs to, when the blend engine made it
     /// ([`BlendTag`]). Contract, in step with `surface`:
     /// - split and boolean sub-faces inherit it;
@@ -469,38 +667,57 @@ pub struct Face {
     ///   two blends never share an id on the result.
     ///
     /// Persisted in geometry buffer v10.
-    pub blend: Option<BlendTag>,
+    pub fn blend(&self) -> Option<BlendTag> {
+        self.extra().blend
+    }
+
+    /// Sets [`Face::blend`].
+    pub fn set_blend(&mut self, b: Option<BlendTag>) {
+        self.update_extra(|e| e.blend = b);
+    }
+
     /// The face's attribute dictionary ([`Object::face_attrs`]), or
     /// [`AttrSlot::NONE`]. A face built from an existing one (a split
     /// fragment, an imprint, a boolean result face, a thickened copy)
     /// takes its source's; a face built with no source (extrusion and boss
     /// walls, caps) has none. A merge keeps the survivor's. Persisted in
     /// geometry buffer v9.
-    pub attrs: AttrSlot,
-}
+    pub fn attr_slot(&self) -> AttrSlot {
+        self.extra().attr_slot
+    }
 
-impl Face {
+    /// Sets [`Face::attr_slot`].
+    pub fn set_attr_slot(&mut self, s: AttrSlot) {
+        self.update_extra(|e| e.attr_slot = s);
+    }
+
     /// This face's restorable attribute state (see [`FaceAttrs`]).
     pub fn attrs(&self) -> FaceAttrs {
+        let e = self.extra();
         FaceAttrs {
             material: self.material,
-            back_material: self.back_material,
-            uv_frame: self.uv_frame,
-            surface: self.surface,
-            blend: self.blend,
-            attrs: self.attrs,
+            back_material: e.back_material,
+            uv_frame: e.uv_frame,
+            surface: e.surface,
+            blend: e.blend,
+            attrs: e.attr_slot,
         }
     }
 
     /// Overwrites this face's restorable attribute state (undo's restore
-    /// path; forward ops derive attributes through their own rules instead).
-    pub(crate) fn set_attrs(&mut self, attrs: FaceAttrs) {
+    /// path and [`Face::new`]; forward ops derive attributes through their
+    /// own rules instead).
+    pub fn set_attrs(&mut self, attrs: FaceAttrs) {
         self.material = attrs.material;
-        self.back_material = attrs.back_material;
-        self.uv_frame = attrs.uv_frame;
-        self.surface = attrs.surface;
-        self.blend = attrs.blend;
-        self.attrs = attrs.attrs;
+        self.update_extra(|e| {
+            *e = FaceExtra {
+                back_material: attrs.back_material,
+                uv_frame: attrs.uv_frame,
+                surface: attrs.surface,
+                blend: attrs.blend,
+                attr_slot: attrs.attrs,
+            }
+        });
     }
 }
 
@@ -695,6 +912,7 @@ impl Object {
             .values()
             .map(|s| s.faces.capacity() * std::mem::size_of::<FaceId>())
             .sum();
+        let face_heap: usize = self.faces.values().map(Face::heap_bytes).sum();
         [
             (self.vertices.addr(), table(&self.vertices)),
             (self.half_edges.addr(), table(&self.half_edges)),
@@ -704,7 +922,7 @@ impl Object {
                 crate::shared::btree_heap_bytes(&self.edge_arcs),
             ),
             (self.loops.addr(), table(&self.loops)),
-            (self.faces.addr(), table(&self.faces)),
+            (self.faces.addr(), table(&self.faces) + face_heap),
             (self.shells.addr(), table(&self.shells) + shell_lists),
         ]
     }
@@ -882,7 +1100,7 @@ impl Object {
     /// The attribute dictionary of `face` (namespace → key → value), or
     /// `None` when the face carries none or is not in this Object.
     pub fn face_attrs(&self, face: FaceId) -> Option<&AttrDict> {
-        self.attr_dict(self.faces.get(face)?.attrs)
+        self.attr_dict(self.faces.get(face)?.attr_slot())
     }
 
     /// The attribute dictionary of `edge`, or `None` when the edge carries
@@ -893,7 +1111,7 @@ impl Object {
 
     /// Whether any live face or edge carries a dictionary.
     pub(crate) fn has_element_attrs(&self) -> bool {
-        self.faces.values().any(|f| !f.attrs.is_none())
+        self.faces.values().any(|f| !f.attr_slot().is_none())
             || self.edges.values().any(|e| !e.attrs.is_none())
     }
 
@@ -915,7 +1133,9 @@ impl Object {
     /// slot it had. The caller guarantees `face` is live.
     pub(crate) fn set_face_attrs(&mut self, face: FaceId, dict: AttrDict) -> AttrSlot {
         let slot = self.intern_attrs(dict);
-        std::mem::replace(&mut self.faces[face].attrs, slot)
+        let old = self.faces[face].attr_slot();
+        self.faces[face].set_attr_slot(slot);
+        old
     }
 
     /// Points `edge` at `dict` (interned; empty = none) and returns the
@@ -930,7 +1150,7 @@ impl Object {
     /// dictionaries keep the seam between them, as differently painted
     /// faces do.
     pub(crate) fn face_attrs_eq(&self, a: FaceId, b: FaceId) -> bool {
-        let (sa, sb) = (self.faces[a].attrs, self.faces[b].attrs);
+        let (sa, sb) = (self.faces[a].attr_slot(), self.faces[b].attr_slot());
         sa == sb || self.attr_dict(sa) == self.attr_dict(sb)
     }
 
@@ -1007,7 +1227,7 @@ impl Object {
     pub fn analytic_centers(&self) -> Vec<(Point3, FaceId)> {
         let mut groups: Vec<(SurfaceRef, Point3, FaceId)> = Vec::new();
         for (fid, face) in &self.faces {
-            let Some(s) = face.surface else { continue };
+            let Some(s) = face.surface() else { continue };
             let center = match s {
                 SurfaceRef::Sphere { center, .. } | SurfaceRef::Torus { center, .. } => center,
                 SurfaceRef::Cylinder { .. } | SurfaceRef::Cone { .. } => continue,
@@ -1024,7 +1244,7 @@ impl Object {
     pub fn max_blend_id(&self) -> Option<BlendId> {
         self.faces
             .values()
-            .filter_map(|f| f.blend.map(|t| t.id))
+            .filter_map(|f| f.blend().map(|t| t.id))
             .max()
     }
 
@@ -1045,7 +1265,7 @@ impl Object {
     #[doc(hidden)]
     pub fn set_face_surface_for_test(&mut self, face: FaceId, surface: Option<SurfaceRef>) {
         if let Some(f) = self.faces.get_mut(face) {
-            f.surface = surface;
+            f.set_surface(surface);
         }
     }
 
@@ -1054,7 +1274,7 @@ impl Object {
     #[doc(hidden)]
     pub fn set_face_blend_for_test(&mut self, face: FaceId, blend: Option<BlendTag>) {
         if let Some(f) = self.faces.get_mut(face) {
-            f.blend = blend;
+            f.set_blend(blend);
         }
     }
 
@@ -1122,7 +1342,7 @@ impl Object {
         }
         let mut groups: Vec<Group> = Vec::new();
         for (fid, face) in &self.faces {
-            let Some(surface) = face.surface else {
+            let Some(surface) = face.surface() else {
                 continue;
             };
             // Rims come from cylinders only; spheres, tori and cones offer
@@ -1533,6 +1753,96 @@ mod record_size_tests {
     fn an_edge_record_stays_small() {
         let size = std::mem::size_of::<Edge>();
         assert!(size <= 24, "Edge is {size} bytes");
+    }
+
+    /// A face record keeps only what every face has inline; the fields
+    /// almost no face sets sit behind one pointer, and an empty hole list
+    /// is one pointer too.
+    #[test]
+    fn a_face_record_stays_small() {
+        let size = std::mem::size_of::<Face>();
+        assert!(size <= 64, "Face is {size} bytes");
+        assert_eq!(
+            std::mem::size_of::<LoopList>(),
+            std::mem::size_of::<usize>()
+        );
+    }
+
+    fn plain_face() -> Face {
+        let plane = Plane::from_point_normal(Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0))
+            .expect("unit +Z");
+        Face::new(
+            LoopId::default(),
+            LoopList::new(),
+            plane,
+            FaceAttrs::default(),
+        )
+    }
+
+    /// Each rare field reads back what was set; the box exists only while
+    /// one of them is set, and setting them all back frees it.
+    #[test]
+    fn rare_face_fields_round_trip_and_free_their_box() {
+        let mut f = plain_face();
+        assert!(f.extra.is_none());
+        assert_eq!(f.attrs(), FaceAttrs::default());
+
+        let tag = BlendTag {
+            id: BlendId(7),
+            kind: BlendKind::Fillet,
+            role: BlendRole::Strip,
+        };
+        let surface = SurfaceRef::Cylinder {
+            axis_point: Point3::new(1.0, 2.0, 3.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            radius: 0.5,
+        };
+        f.set_blend(Some(tag));
+        f.set_surface(Some(surface));
+        f.set_attr_slot(AttrSlot(3));
+        assert!(f.extra.is_some());
+        assert_eq!(f.blend(), Some(tag));
+        assert_eq!(f.surface(), Some(surface));
+        assert_eq!(f.attr_slot(), AttrSlot(3));
+        assert_eq!(f.back_material(), None);
+        assert_eq!(f.uv_frame(), None);
+
+        let snapshot = f.attrs();
+        let mut g = plain_face();
+        g.set_attrs(snapshot);
+        assert_eq!(g.attrs(), snapshot);
+
+        f.set_blend(None);
+        f.set_surface(None);
+        assert!(f.extra.is_some(), "the attribute slot is still set");
+        f.set_attr_slot(AttrSlot::NONE);
+        assert!(f.extra.is_none());
+        g.set_attrs(FaceAttrs::default());
+        assert!(g.extra.is_none());
+    }
+
+    /// The hole list keeps a `Vec`'s order through push, retain and clear,
+    /// and frees its storage when emptied.
+    #[test]
+    fn loop_list_behaves_like_a_vec() {
+        let mut keys = SlotMap::<LoopId, ()>::with_key();
+        let ids: Vec<LoopId> = (0..4).map(|_| keys.insert(())).collect();
+        let mut l = LoopList::new();
+        assert!(l.is_empty());
+        for &id in &ids {
+            l.push(id);
+        }
+        assert_eq!(&l[..], &ids[..]);
+        l.retain(|&id| id != ids[1]);
+        assert_eq!(l.to_vec(), vec![ids[0], ids[2], ids[3]]);
+        assert_eq!(l.clone().into_iter().collect::<Vec<_>>(), l.to_vec());
+        assert_eq!(LoopList::from(l.to_vec()), l);
+        l.retain(|_| false);
+        assert!(l.0.is_none());
+        assert_eq!(LoopList::from(Vec::new()), LoopList::new());
+        l.push(ids[0]);
+        l.clear();
+        assert!(l.0.is_none());
     }
 }
 

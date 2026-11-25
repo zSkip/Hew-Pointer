@@ -1740,11 +1740,11 @@ fn build(
         .collect();
     let uvs: Vec<_> = faces
         .iter()
-        .map(|f| attr(f).and_then(|s| s.uv_frame))
+        .map(|f| attr(f).and_then(|s| s.uv_frame()))
         .collect();
     let surfaces: Vec<_> = faces
         .iter()
-        .map(|f| attr(f).and_then(|s| s.surface))
+        .map(|f| attr(f).and_then(|s| s.surface()))
         .collect();
     let mut obj = Object::from_polygons_full(
         &positions,
@@ -1757,7 +1757,7 @@ fn build(
     )?;
     let backs: Vec<_> = faces
         .iter()
-        .map(|f| attr(f).and_then(|s| s.back_material))
+        .map(|f| attr(f).and_then(|s| s.back_material()))
         .collect();
     obj.set_built_back_materials(&backs);
     let ids: Vec<FaceId> = obj.faces.keys().collect();
@@ -2239,7 +2239,7 @@ fn coplanar_pair(obj: &Object, f: FaceId, g: FaceId) -> bool {
             .loop_positions(b.outer_loop)
             .all(|p| a.plane.signed_distance(p).abs() <= tol::PLANE_DIST)
         && a.material == b.material
-        && a.back_material == b.back_material
+        && a.back_material() == b.back_material()
 }
 
 /// The hard edges of `obj` between two faces of [`coplanar_pair`], as

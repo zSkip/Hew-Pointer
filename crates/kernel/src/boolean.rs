@@ -739,7 +739,7 @@ fn execute_near(
     let claimed: Vec<FaceId> = result
         .faces()
         .iter()
-        .filter(|(f, face)| face.surface.is_some() && !new_set.contains_key(f))
+        .filter(|(f, face)| face.surface().is_some() && !new_set.contains_key(f))
         .map(|(f, _)| f)
         .collect();
     for &f in &claimed {
@@ -858,16 +858,16 @@ fn face_poly(obj: &Object, fid: FaceId, side: u8, blend_offset: u32, far: bool) 
             .collect(),
         plane: f.plane,
         material: f.material,
-        back_material: f.back_material,
-        uv_frame: f.uv_frame,
-        surface: f.surface,
+        back_material: f.back_material(),
+        uv_frame: f.uv_frame(),
+        surface: f.surface(),
         // Operand B's blend ids move past A's largest, so two blends
         // never share an id on the result.
-        blend: f.blend.map(|t| BlendTag {
+        blend: f.blend().map(|t| BlendTag {
             id: crate::topo::BlendId(t.id.0 + blend_offset),
             ..t
         }),
-        attrs: obj.attr_dict(f.attrs).cloned().unwrap_or_default(),
+        attrs: obj.attr_dict(f.attr_slot()).cloned().unwrap_or_default(),
         source: Provenance { side, face: fid },
         ids,
         far,
@@ -2588,12 +2588,13 @@ fn assemble_onto(
         let tagged: Vec<FaceId> = obj
             .faces()
             .iter()
-            .filter(|(f, face)| face.blend.is_some() && !fresh.contains_key(f))
+            .filter(|(f, face)| face.blend().is_some() && !fresh.contains_key(f))
             .map(|(f, _)| f)
             .collect();
         for f in tagged {
-            if let Some(t) = obj.faces[f].blend.as_mut() {
+            if let Some(mut t) = obj.faces[f].blend() {
                 t.id = crate::topo::BlendId(t.id.0 + blend_offset);
+                obj.faces[f].set_blend(Some(t));
             }
         }
     }

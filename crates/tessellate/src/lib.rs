@@ -255,7 +255,7 @@ fn tessellate_filtered(
         // radiate outward, hole walls inward). Adjacent facets of one wall
         // then share identical vertex normals along their seams, so the
         // wall renders as one smooth surface with no per-edge data.
-        let smooth: Option<(kernel::Point3, kernel::Vec3, f64)> = face.surface.and_then(|sr| {
+        let smooth: Option<(kernel::Point3, kernel::Vec3, f64)> = face.surface().and_then(|sr| {
             let kernel::SurfaceRef::Cylinder {
                 axis_point, axis, ..
             } = sr
@@ -278,7 +278,7 @@ fn tessellate_filtered(
         // faces; a vertex where that normal is undefined or edge-on to the
         // facet shades flat.
         let analytic_other: Option<kernel::SurfaceRef> = face
-            .surface
+            .surface()
             .filter(|sr| !matches!(sr, kernel::SurfaceRef::Cylinder { .. }));
 
         // SOFT-edge smoothing (design §7b): a vertex on a marked soft
@@ -338,7 +338,7 @@ fn tessellate_filtered(
         // tangent to along a rail with that face's normal; the kernel reads
         // the fan around each corner (normals only, no vertex moves). It
         // takes precedence over the per-face paths below.
-        let blend_at: std::collections::BTreeMap<[u64; 3], [f32; 3]> = if face.blend.is_some() {
+        let blend_at: std::collections::BTreeMap<[u64; 3], [f32; 3]> = if face.blend().is_some() {
             object
                 .blend_shading_normals(face_id)
                 .into_iter()
@@ -435,7 +435,7 @@ fn tessellate_filtered(
             // it — `uv = frame.apply(p)`. Otherwise fall back to the planar
             // projection divided by world_size. Untextured/Hew-drawn faces
             // (no frame) produce byte-identical output to previous behaviour.
-            let (fu, fv) = if let Some(frame) = face.uv_frame {
+            let (fu, fv) = if let Some(frame) = face.uv_frame() {
                 let uv = frame.apply(kernel::Point3::new(x, y, z));
                 (uv[0] as f32, uv[1] as f32)
             } else {
@@ -455,7 +455,7 @@ fn tessellate_filtered(
 
         // A painted back: the same polygon again, facing the other way,
         // in the back's color and with its texture's scale.
-        if let Some(back) = face.back_material.filter(|&b| Some(b) != material_id) {
+        if let Some(back) = face.back_material().filter(|&b| Some(b) != material_id) {
             let back_base = (mesh.positions.len() / 3) as u32;
             let (bcolor, bws) = match palette.get(back) {
                 Some(mat) => (
@@ -477,7 +477,7 @@ fn tessellate_filtered(
                     bcolor.g as f32 / 255.0,
                     bcolor.b as f32 / 255.0,
                 ]);
-                let (fu, fv) = if let Some(frame) = face.uv_frame {
+                let (fu, fv) = if let Some(frame) = face.uv_frame() {
                     let uv = frame.apply(kernel::Point3::new(x, y, z));
                     (uv[0] as f32, uv[1] as f32)
                 } else {
@@ -700,7 +700,7 @@ pub fn tessellate_smoothed_with(
                 // The point projected onto the source face's plane, mapped
                 // as the flat tessellation maps a point of that face.
                 let on = p - normal * face.plane.signed_distance(p);
-                let (fu, fv) = match face.uv_frame {
+                let (fu, fv) = match face.uv_frame() {
                     Some(frame) => {
                         let uv = frame.apply(on);
                         (uv[0] as f32, uv[1] as f32)

@@ -33,8 +33,8 @@ fn blend_ok(obj: &Object, s: &BlendSpec) -> (Object, BlendReport) {
     assert_valid_solid(&after);
     for &f in &report.new_faces {
         let face = &after.faces()[f];
-        assert!(report.blends.contains(&face.blend.expect("tagged").id));
-        if let Some(claim) = face.surface {
+        assert!(report.blends.contains(&face.blend().expect("tagged").id));
+        if let Some(claim) = face.surface() {
             for p in after.loop_positions(face.outer_loop) {
                 assert!(
                     claim.distance(p).abs() <= kernel::tol::PLANE_DIST,
@@ -64,7 +64,7 @@ fn new_claims(after: &Object, report: &BlendReport) -> Vec<SurfaceRef> {
     report
         .new_faces
         .iter()
-        .filter_map(|&f| after.faces()[f].surface)
+        .filter_map(|&f| after.faces()[f].surface())
         .collect()
 }
 
@@ -175,7 +175,7 @@ fn rod_end_hemisphere() {
         after
             .faces()
             .values()
-            .all(|f| f.plane.normal().z < 1.0 - 1e-9 || f.blend.is_some())
+            .all(|f| f.plane.normal().z < 1.0 - 1e-9 || f.blend().is_some())
     );
     let poles = after
         .vertices()
@@ -249,7 +249,7 @@ fn fillet_after_rim_chamfer_is_coaxial_torus() {
     // it too; the claims under test are the fillet's.
     report.new_faces.retain(|&f| {
         after.faces()[f]
-            .blend
+            .blend()
             .is_some_and(|t| !chamfer.blends.contains(&t.id))
     });
     let claims = new_claims(&after, &report);
@@ -313,7 +313,7 @@ fn d_post_edge(obj: &Object) -> (EdgeId, SurfaceRef) {
     let wall = obj
         .faces()
         .values()
-        .find_map(|f| f.surface)
+        .find_map(|f| f.surface())
         .expect("the wall claims its cylinder");
     (e, wall)
 }
@@ -321,7 +321,7 @@ fn d_post_edge(obj: &Object) -> (EdgeId, SurfaceRef) {
 fn wall_facets(obj: &Object, wall: &SurfaceRef) -> Vec<FaceId> {
     obj.faces()
         .iter()
-        .filter(|(_, f)| f.blend.is_none() && f.surface.is_some_and(|s| s.same_surface(wall)))
+        .filter(|(_, f)| f.blend().is_none() && f.surface().is_some_and(|s| s.same_surface(wall)))
         .map(|(id, _)| id)
         .collect()
 }
@@ -487,7 +487,7 @@ fn cylinder_with_cap_chord(a: usize, b: usize) -> Object {
                         let ps: Vec<Point3> = c.loop_positions(g.outer_loop).collect();
                         same_ring(&ps, f)
                     })
-                    .and_then(|g| g.surface),
+                    .and_then(|g| g.surface()),
             );
             rings.push(f.clone());
         }
