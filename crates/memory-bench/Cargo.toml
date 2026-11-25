@@ -1,0 +1,15 @@
+[package]
+name = "memory-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+# Measures the kernel's heap on large meshes: live and peak bytes per step
+# (import, save, load, 3MF export, Move, Push/Pull, undo). A tool, not a test:
+# `cargo run --release -p memory-bench -- --help`.
+
+[dependencies]
+kernel.workspace = true
+stl-import.workspace = true
+mesh-export.workspace = true
