@@ -115,9 +115,8 @@ fn soft_edges_rims_and_surfaces_are_adopted_where_they_hold() {
     let obj = only_object(&doc);
     let soft = obj.edges().iter().filter(|(_, e)| e.soft).count();
     let claimed = obj
-        .edges()
-        .iter()
-        .filter(|(_, e)| e.curve.is_some())
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
         .count();
     let walls = obj
         .faces()
@@ -165,7 +164,7 @@ fn a_claim_the_geometry_contradicts_is_dropped_not_forced() {
     assert!(
         obj.edges()
             .iter()
-            .all(|(_, e)| !e.soft && e.curve.is_none())
+            .all(|(id, e)| !e.soft && obj.edge_curve(id).is_none())
     );
     assert!(obj.faces().iter().all(|(_, f)| f.surface.is_none()));
 }

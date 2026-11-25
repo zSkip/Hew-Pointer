@@ -774,7 +774,8 @@ fn lengthened_meta(obj: &Object, v: VertexId, p: Point3) -> Option<EdgeMeta> {
             let t = toward.dot(along) / len;
             let off = (toward - along * (t / len)).length();
             if t > 0.0 && off <= tol::BLEND_VERIFY {
-                let e = &obj.edges()[hes[h].edge];
+                let eid = hes[h].edge;
+                let e = &obj.edges()[eid];
                 let on_circle = |g: &crate::sketch::CurveGeom| {
                     ((p - g.center).length() - g.radius).abs()
                         <= obj.planarity_tol.max(tol::PLANE_DIST)
@@ -782,8 +783,8 @@ fn lengthened_meta(obj: &Object, v: VertexId, p: Point3) -> Option<EdgeMeta> {
                 let meta = EdgeMeta {
                     soft: e.soft,
                     crease: e.crease,
-                    curve: e.curve.filter(on_circle),
-                    polygon: e.polygon,
+                    curve: obj.edge_curve(eid).filter(on_circle),
+                    polygon: obj.edge_polygon(eid),
                 };
                 return (meta != EdgeMeta::default()).then_some(meta);
             }

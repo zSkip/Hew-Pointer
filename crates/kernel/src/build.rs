@@ -439,10 +439,8 @@ impl Object {
                         let edge = obj.edges.insert(Edge {
                             half_edge: h,
                             twin_half_edge: Some(t),
-                            curve: None,
                             soft: false,
                             crease: false,
-                            polygon: None,
                             attrs: AttrSlot::NONE,
                         });
                         obj.half_edges[h].edge = edge;
@@ -455,10 +453,8 @@ impl Object {
                     let edge = obj.edges.insert(Edge {
                         half_edge: h,
                         twin_half_edge: None,
-                        curve: None,
                         soft: false,
                         crease: false,
-                        polygon: None,
                         attrs: AttrSlot::NONE,
                     });
                     obj.half_edges[h].edge = edge;
@@ -596,10 +592,8 @@ impl Object {
                         let edge = obj.edges.insert(Edge {
                             half_edge: h,
                             twin_half_edge: Some(t),
-                            curve: None,
                             soft: false,
                             crease: false,
-                            polygon: None,
                             attrs: AttrSlot::NONE,
                         });
                         obj.half_edges[h].edge = edge;
@@ -612,10 +606,8 @@ impl Object {
                     let edge = obj.edges.insert(Edge {
                         half_edge: h,
                         twin_half_edge: None,
-                        curve: None,
                         soft: false,
                         crease: false,
-                        polygon: None,
                         attrs: AttrSlot::NONE,
                     });
                     obj.half_edges[h].edge = edge;
@@ -645,9 +637,9 @@ impl Object {
         obj
     }
 
-    /// Drop any per-edge circle claim ([`crate::topo::Edge::curve`]) that no
+    /// Drop any per-edge circle claim ([`crate::topo::EdgeArcs::curve`]) that no
     /// longer describes its (possibly moved) endpoints — the map-or-drop
-    /// discipline for `Edge::curve`, mirroring how `Face::surface` is dropped
+    /// discipline for `EdgeArcs::curve`, mirroring how `Face::surface` is dropped
     /// when a face leaves its chord plane (the true-curves design §4.2).
     ///
     /// Call at the tail of every op that moves a SUBSET of vertices, BEFORE
@@ -658,7 +650,7 @@ impl Object {
     /// has nothing to do with the circle. Dropping degrades gracefully to
     /// flat facets; a stale claim is never kept. The predicate is exactly the
     /// validator's edge-curve check, so anything kept here passes validation.
-    /// The map half of map-or-drop for [`Edge::curve`](crate::topo::Edge::curve)
+    /// The map half of map-or-drop for [`EdgeArcs::curve`](crate::topo::EdgeArcs::curve)
     /// under a rigid translate of a vertex subset: an edge whose endpoints were
     /// both carried by `sweep` is a chord of the same circle moved by `sweep`,
     /// so its claim moves with it. "Carried" is proven per endpoint, not
@@ -678,11 +670,11 @@ impl Object {
     ) {
         let tol = self.planarity_tol;
         let mapped: Vec<(EdgeId, crate::sketch::CurveGeom)> = self
-            .edges
+            .edge_arcs
             .iter()
-            .filter_map(|(id, edge)| {
-                let g = edge.curve?;
-                let h = self.half_edges[edge.half_edge];
+            .filter_map(|(&id, arcs)| {
+                let g = arcs.curve?;
+                let h = self.half_edges[self.edges[id].half_edge];
                 let (va, vb) = (h.origin, self.half_edges[h.next].origin);
                 let carried = |v: VertexId| {
                     moved.contains(&v)
@@ -707,16 +699,16 @@ impl Object {
             })
             .collect();
         for (id, g) in mapped {
-            self.edges[id].curve = Some(g);
+            self.set_edge_curve(id, Some(g));
         }
         // A regular polygon's side carried with the sweep keeps its mark,
         // moved with it (its pieces need not end on the circumcircle).
         let polys: Vec<(EdgeId, crate::sketch::CurveGeom)> = self
-            .edges
+            .edge_arcs
             .iter()
-            .filter_map(|(id, edge)| {
-                let g = edge.polygon?;
-                let h = self.half_edges[edge.half_edge];
+            .filter_map(|(&id, arcs)| {
+                let g = arcs.polygon?;
+                let h = self.half_edges[self.edges[id].half_edge];
                 let (va, vb) = (h.origin, self.half_edges[h.next].origin);
                 let carried = |v: VertexId| {
                     moved.contains(&v)
@@ -734,18 +726,18 @@ impl Object {
             })
             .collect();
         for (id, g) in polys {
-            self.edges[id].polygon = Some(g);
+            self.set_edge_polygon(id, Some(g));
         }
     }
 
     pub(crate) fn drop_stale_edge_curves(&mut self) {
         let tol = self.planarity_tol;
         let stale: Vec<crate::ids::EdgeId> = self
-            .edges
+            .edge_arcs
             .iter()
-            .filter_map(|(id, edge)| {
-                let g = edge.curve?;
-                let h = self.half_edges[edge.half_edge];
+            .filter_map(|(&id, arcs)| {
+                let g = arcs.curve?;
+                let h = self.half_edges[self.edges[id].half_edge];
                 let a = self.vertices[h.origin].position;
                 let b = self.vertices[self.half_edges[h.next].origin].position;
                 let holds = g.radius.is_finite()
@@ -756,23 +748,23 @@ impl Object {
             })
             .collect();
         for id in stale {
-            self.edges[id].curve = None;
+            self.set_edge_curve(id, None);
         }
         // A polygon side (or a piece of one) still lies along a regular
         // polygon's side of its circumcircle.
         let stale: Vec<crate::ids::EdgeId> = self
-            .edges
+            .edge_arcs
             .iter()
-            .filter_map(|(id, edge)| {
-                let g = edge.polygon?;
-                let h = self.half_edges[edge.half_edge];
+            .filter_map(|(&id, arcs)| {
+                let g = arcs.polygon?;
+                let h = self.half_edges[self.edges[id].half_edge];
                 let a = self.vertices[h.origin].position;
                 let b = self.vertices[self.half_edges[h.next].origin].position;
                 g.polygon_side_count(a, b).is_none().then_some(id)
             })
             .collect();
         for id in stale {
-            self.edges[id].polygon = None;
+            self.set_edge_polygon(id, None);
         }
     }
 
@@ -1012,11 +1004,18 @@ impl Object {
                 _ => dropped += 1,
             }
         }
-        for &(pair, g) in &extra.edge_curves {
-            let on = |p: Point3| ((p - g.center).length() - g.radius).abs() <= tol;
-            let ok = g.radius > crate::tol::POINT_MERGE && on(pair[0]) && on(pair[1]);
-            match edge_of(pair).filter(|_| ok) {
-                Some(e) => self.edges[e].curve = Some(g),
+        let curved: Vec<(Option<EdgeId>, crate::sketch::CurveGeom)> = extra
+            .edge_curves
+            .iter()
+            .map(|&(pair, g)| {
+                let on = |p: Point3| ((p - g.center).length() - g.radius).abs() <= tol;
+                let ok = g.radius > crate::tol::POINT_MERGE && on(pair[0]) && on(pair[1]);
+                (edge_of(pair).filter(|_| ok), g)
+            })
+            .collect();
+        for (edge, g) in curved {
+            match edge {
+                Some(e) => self.set_edge_curve(e, Some(g)),
                 None => dropped += 1,
             }
         }

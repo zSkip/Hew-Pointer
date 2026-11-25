@@ -698,11 +698,12 @@ impl Object {
         for _ in 0..hes.len() {
             if hes[hes[h].next].origin == b {
                 let e = &self.edges()[hes[h].edge];
+                let arcs = self.edge_arcs(hes[h].edge);
                 return Some(EdgeMeta {
                     soft: e.soft,
                     crease: e.crease,
-                    curve: e.curve,
-                    polygon: e.polygon,
+                    curve: arcs.curve,
+                    polygon: arcs.polygon,
                 });
             }
             h = hes[hes[h].prev].twin?;

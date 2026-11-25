@@ -367,7 +367,7 @@ fn effective_claims(obj: &Object) -> [usize; 3] {
     let v = obj.vertices();
     let surface = |h: kernel::HalfEdgeId| obj.faces()[obj.loops()[he[h].loop_id].face].surface;
     let (mut soft, mut claimed) = (0, 0);
-    for (_, e) in obj.edges().iter() {
+    for (eid, e) in obj.edges().iter() {
         let near = surface(e.half_edge);
         let far = e.twin_half_edge.and_then(surface);
         let seam = matches!((near, far), (Some(x), Some(y)) if x.same_surface(&y));
@@ -405,7 +405,7 @@ fn effective_claims(obj: &Object) -> [usize; 3] {
                 && (r(pa) - radius).abs() <= tol
                 && (r(pb) - radius).abs() <= tol
         };
-        if e.curve.is_some() || (!seam && rim()) {
+        if obj.edge_curve(eid).is_some() || (!seam && rim()) {
             claimed += 1;
         }
     }

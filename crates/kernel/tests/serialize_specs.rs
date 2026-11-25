@@ -252,7 +252,9 @@ fn imprinted_circle_edge_claim_round_trips_through_geometry_buffer_v5() {
     obj.split_face_inner_with_curve(top, &circle, Some(CurveGeom { center, radius }))
         .unwrap();
     assert_eq!(
-        obj.edges().values().filter(|e| e.curve.is_some()).count(),
+        obj.edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
+            .count(),
         24,
         "the imprinted circle's 24 edges carry the claim"
     );
@@ -265,14 +267,16 @@ fn imprinted_circle_edge_claim_round_trips_through_geometry_buffer_v5() {
     // The claim survives, bitwise.
     assert_eq!(
         decoded
-            .edges()
-            .values()
-            .filter(|e| e.curve.is_some())
+            .edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
             .count(),
         24,
         "the edge claim survives the geometry-buffer v5 round-trip"
     );
-    let g = decoded.edges().values().find_map(|e| e.curve).unwrap();
+    let g = decoded
+        .edge_arc_entries()
+        .find_map(|(_, a)| a.curve)
+        .unwrap();
     assert_eq!(g.radius, radius);
     assert!(g.center.approx_eq(center, tol::POINT_MERGE));
 

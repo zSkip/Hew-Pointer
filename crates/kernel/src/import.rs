@@ -125,7 +125,7 @@ pub fn rings_trace_each_other(a: &[Point3], b: &[Point3], tol: f64) -> bool {
 /// Source claims about a mesh's edges and faces, applied by `ingest` to the
 /// built Object wherever they hold — claims are metadata, never geometry,
 /// so one the built Object contradicts is dropped (the map-or-drop
-/// contract of [`SurfaceRef`] and [`crate::topo::Edge::curve`]), never
+/// contract of [`SurfaceRef`] and [`crate::topo::EdgeArcs::curve`]), never
 /// forced. Positions name edges, since healing may renumber vertices; an
 /// endpoint matches the built vertex within the Object's planarity
 /// tolerance.

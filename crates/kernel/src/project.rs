@@ -211,13 +211,14 @@ fn point_segment_distance(p: Point3, a: Point3, b: Point3) -> f64 {
     (p - (a + ab * t)).length()
 }
 
-fn edge_meta(obj: &Object, e: EdgeId) -> EdgeMeta {
-    let e = &obj.edges()[e];
+fn edge_meta(obj: &Object, id: EdgeId) -> EdgeMeta {
+    let e = &obj.edges()[id];
+    let arcs = obj.edge_arcs(id);
     EdgeMeta {
         soft: e.soft,
         crease: e.crease,
-        curve: e.curve,
-        polygon: e.polygon,
+        curve: arcs.curve,
+        polygon: arcs.polygon,
     }
 }
 

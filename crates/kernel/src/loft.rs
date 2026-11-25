@@ -1716,7 +1716,7 @@ impl Object {
                 .filter(|&e| obj.edge_endpoints(e).is_some_and(|(a, b)| on(a) && on(b)))
                 .collect();
             for e in rim {
-                obj.edges[e].curve = Some(g);
+                obj.set_edge_curve(e, Some(g));
             }
         }
         obj.validate().map_err(|_| bad)?;

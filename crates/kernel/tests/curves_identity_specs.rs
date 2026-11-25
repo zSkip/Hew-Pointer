@@ -262,8 +262,14 @@ fn claims(doc: &Document, o: ObjectId) -> (usize, usize, usize) {
         .values()
         .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
         .count();
-    let circles = obj.edges().values().filter(|e| e.curve.is_some()).count();
-    let polygons = obj.edges().values().filter(|e| e.polygon.is_some()).count();
+    let circles = obj
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
+    let polygons = obj
+        .edge_arc_entries()
+        .filter(|(_, a)| a.polygon.is_some())
+        .count();
     (cylinders, circles, polygons)
 }
 

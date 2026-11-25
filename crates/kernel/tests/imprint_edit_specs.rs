@@ -150,7 +150,7 @@ fn imprint_parent(obj: &Object, face: FaceId) -> Option<FaceId> {
 fn uniform_curve(obj: &Object, l: kernel::LoopId) -> Option<CurveGeom> {
     let mut it = obj
         .loop_half_edges(l)
-        .map(|h| obj.edges()[obj.half_edges()[h].edge].curve);
+        .map(|h| obj.edge_curve(obj.half_edges()[h].edge));
     let first = it.next()??;
     it.all(|c| {
         c.is_some_and(|c| {
@@ -409,8 +409,9 @@ fn scale_maps_the_circle_claim() {
     cube.validate().unwrap();
     // The claim still describes the loop: a push-through stamps a cylinder.
     for h in cube.loop_half_edges(cube.faces()[sf].outer_loop) {
-        let e = &cube.edges()[cube.half_edges()[h].edge];
-        let c = e.curve.expect("every loop edge keeps its claim");
+        let c = cube
+            .edge_curve(cube.half_edges()[h].edge)
+            .expect("every loop edge keeps its claim");
         let p = cube.vertices()[cube.half_edges()[h].origin].position;
         assert!(((p - c.center).length() - c.radius).abs() < tol::PLANE_DIST);
     }
@@ -1009,7 +1010,7 @@ fn deleting_a_drawn_circle_and_undoing_gives_the_circle_back() {
     assert!(curve.center.approx_eq(g.center, tol::POINT_MERGE));
     assert!((curve.radius - g.radius).abs() < tol::POINT_MERGE);
     for h in obj.loop_half_edges(obj.faces()[feats[0].0].outer_loop) {
-        assert!(obj.edges()[obj.half_edges()[h].edge].curve.is_some());
+        assert!(obj.edge_curve(obj.half_edges()[h].edge).is_some());
     }
     // Redo dissolves it again; undo again still brings the circle back.
     doc.redo().unwrap();
@@ -1689,9 +1690,8 @@ fn pushing_a_shape_around_a_circle_raises_a_smooth_cylinder_that_stays_a_circle(
     let claimed = |doc: &Document| {
         doc.object(id)
             .unwrap()
-            .edges()
-            .values()
-            .filter(|e| e.curve.is_some())
+            .edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
             .count()
     };
 
@@ -1739,9 +1739,8 @@ fn pushing_a_shape_around_a_circle_raises_a_smooth_cylinder_that_stays_a_circle(
     assert!(obj.analytic_rims().iter().any(|rim| rim.has_coverage()));
     assert_eq!(claimed(&doc), before, "the pushed rim keeps every claim");
     let claims_centered = |obj: &Object, z: f64| {
-        obj.edges()
-            .values()
-            .filter_map(|e| e.curve)
+        obj.edge_arc_entries()
+            .filter_map(|(_, a)| a.curve)
             .filter(|g| {
                 g.center
                     .approx_eq(Point3::new(0.5, 0.5, z), tol::POINT_MERGE)
@@ -1763,7 +1762,10 @@ fn pushing_a_shape_around_a_circle_raises_a_smooth_cylinder_that_stays_a_circle(
     // Undo both, redo both, undo both again: a circle every time. Undo
     // restores exactly the claims the drawing had, and redo exactly the ones
     // the pushes carried.
-    let drawn_claims = drawn.edges().values().filter(|e| e.curve.is_some()).count();
+    let drawn_claims = drawn
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
     for _ in 0..3 {
         doc.undo().unwrap();
         doc.undo().unwrap();

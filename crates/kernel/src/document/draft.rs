@@ -1117,10 +1117,10 @@ impl Document {
                                 a,
                                 b,
                             });
-                            if let Some(g) = obj.edges()[he.edge].curve {
+                            if let Some(g) = obj.edge_curve(he.edge) {
                                 claimed.push((a, b, g));
-                            } else if let Some(g) = obj.edges()[he.edge]
-                                .polygon
+                            } else if let Some(g) = obj
+                                .edge_polygon(he.edge)
                                 .filter(|g| g.polygon_side_count(a, b).is_some())
                             {
                                 poly_claimed.push((a, b, g));

@@ -194,14 +194,13 @@ fn candidate_hashes(
     // written only when present. A pose that is not a similarity cannot
     // carry a circle, so the claims drop there, as a face's surface does.
     let scale = pose.similarity_scale();
-    let edge_claims = |claim: fn(&kernel::topo::Edge) -> Option<kernel::CurveGeom>| {
+    let edge_claims = |claim: fn(&kernel::topo::EdgeArcs) -> Option<kernel::CurveGeom>| {
         let Some(s) = scale else {
             return Vec::new();
         };
-        obj.edges()
-            .iter()
-            .filter_map(|(e, edge)| {
-                let g = claim(edge)?;
+        obj.edge_arc_entries()
+            .filter_map(|(e, arcs)| {
+                let g = claim(&arcs)?;
                 let (a, b) = obj.edge_endpoints(e)?;
                 Some((
                     pose.apply_point(a),

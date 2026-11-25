@@ -43,20 +43,28 @@ pub struct EdgeMeta {
 }
 
 impl EdgeMeta {
-    fn of(e: &Edge) -> EdgeMeta {
+    fn of(o: &Object, id: EdgeId) -> EdgeMeta {
+        let e = &o.edges[id];
+        let arcs = o.edge_arcs(id);
         EdgeMeta {
             soft: e.soft,
             crease: e.crease,
-            curve: e.curve,
-            polygon: e.polygon,
+            curve: arcs.curve,
+            polygon: arcs.polygon,
         }
     }
 
-    fn write(self, e: &mut Edge) {
+    fn write(self, o: &mut Object, id: EdgeId) {
+        let e = &mut o.edges[id];
         e.soft = self.soft;
         e.crease = self.crease;
-        e.curve = self.curve;
-        e.polygon = self.polygon;
+        o.set_edge_arcs(
+            id,
+            crate::topo::EdgeArcs {
+                curve: self.curve,
+                polygon: self.polygon,
+            },
+        );
     }
 }
 
@@ -189,7 +197,7 @@ impl Object {
                 for h in o.loop_half_edges(lid).collect::<Vec<_>>() {
                     let he = o.half_edges[h];
                     let to = o.half_edges[he.next].origin;
-                    inherited.insert(pair(he.origin, to), EdgeMeta::of(&o.edges[he.edge]));
+                    inherited.insert(pair(he.origin, to), EdgeMeta::of(&o, he.edge));
                 }
             }
         }
@@ -215,7 +223,7 @@ impl Object {
                             }
                         }
                         None => {
-                            o.edges.remove(he.edge);
+                            o.remove_edge(he.edge);
                         }
                     }
                 }
@@ -356,10 +364,8 @@ impl Object {
                     let e = o.edges.insert(Edge {
                         half_edge: h,
                         twin_half_edge: None,
-                        curve: None,
                         soft: false,
                         crease: false,
-                        polygon: None,
                         attrs: crate::topo::AttrSlot::NONE,
                     });
                     o.half_edges[h].edge = e;
@@ -373,10 +379,8 @@ impl Object {
                         let e = o.edges.insert(Edge {
                             half_edge: h,
                             twin_half_edge: Some(c),
-                            curve: None,
                             soft: false,
                             crease: false,
-                            polygon: None,
                             attrs: crate::topo::AttrSlot::NONE,
                         });
                         o.half_edges[h].edge = e;
@@ -392,7 +396,7 @@ impl Object {
                         if let (Some(&ia), Some(&ib)) = (index_of.get(&a), index_of.get(&b))
                             && let Some(m) = patch.edge_meta.get(&(ia.min(ib), ia.max(ib)))
                         {
-                            m.write(&mut o.edges[e]);
+                            m.write(&mut o, e);
                         }
                     }
                 }
@@ -425,7 +429,7 @@ impl Object {
                         .flatten()
                 })
                 .unwrap_or_default();
-            meta.write(&mut o.edges[e]);
+            meta.write(&mut o, e);
         }
         for e in o.edges.values_mut() {
             if e.twin_half_edge.is_none() {
@@ -618,7 +622,7 @@ impl Object {
                             opened.push(t);
                         }
                         None => {
-                            o.edges.remove(he.edge);
+                            o.remove_edge(he.edge);
                         }
                     }
                 }
@@ -796,10 +800,8 @@ impl Object {
                 let e = o.edges.insert(Edge {
                     half_edge: h,
                     twin_half_edge: Some(c),
-                    curve: None,
                     soft: false,
                     crease: false,
-                    polygon: None,
                     attrs: crate::topo::AttrSlot::NONE,
                 });
                 o.half_edges[h].edge = e;
@@ -883,10 +885,10 @@ impl Object {
             });
         }
         let mut edge_meta = BTreeMap::new();
-        for (eid, e) in self.edges.iter() {
+        for eid in self.edges.keys() {
             if let Some((a, b)) = self.edge_vertex_ids(eid) {
                 let (ia, ib) = (index[&a], index[&b]);
-                edge_meta.insert((ia.min(ib), ia.max(ib)), EdgeMeta::of(e));
+                edge_meta.insert((ia.min(ib), ia.max(ib)), EdgeMeta::of(self, eid));
             }
         }
         PolyPatch {

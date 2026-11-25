@@ -245,9 +245,8 @@ fn sketch_edges(doc: &Document) -> usize {
 fn claims_of(doc: &Document, o: ObjectId, g: CurveGeom) -> usize {
     doc.object(o)
         .unwrap()
-        .edges()
-        .values()
-        .filter_map(|e| e.curve)
+        .edge_arc_entries()
+        .filter_map(|(_, a)| a.curve)
         .filter(|c| c.center.approx_eq(g.center, 1e-9) && (c.radius - g.radius).abs() < 1e-9)
         .count()
 }
@@ -255,9 +254,8 @@ fn claims_of(doc: &Document, o: ObjectId, g: CurveGeom) -> usize {
 fn claimed_edges(doc: &Document, o: ObjectId) -> usize {
     doc.object(o)
         .unwrap()
-        .edges()
-        .values()
-        .filter(|e| e.curve.is_some())
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
         .count()
 }
 
@@ -664,7 +662,7 @@ fn edge_marks(doc: &Document, o: ObjectId, along: Option<(Point3, Point3)>) -> V
                 ends[1],
                 edge.soft,
                 edge.crease,
-                edge.polygon,
+                obj.edge_polygon(e),
                 obj.edge_attrs(e)
             ))
         })

@@ -186,7 +186,7 @@ pub fn offset_profile(profile: &Profile, distance: f64) -> Result<ProfileOffset,
 /// negative moves the boundary into the face's interior (the loop a
 /// boss/recess imprint commits), positive moves it outside. The boundary's
 /// analytic attribution is recovered from two sources, in order: an edge's
-/// own [`CurveGeom`](crate::topo::Edge::curve) claim (imprinted circles),
+/// own [`CurveGeom`](crate::topo::EdgeArcs::curve) claim (imprinted circles),
 /// else the adjacent face's stamped
 /// [`SurfaceRef::Cylinder`](crate::topo::SurfaceRef) when its axis is
 /// parallel to this face's normal and the edge's endpoints lie on the
@@ -223,7 +223,7 @@ pub fn offset_face_boundary(
         .map(|(k, &h)| {
             let he = object.half_edges()[h];
             // An imprinted circle's own edge claim is authoritative.
-            if let Some(g) = object.edges()[he.edge].curve {
+            if let Some(g) = object.edge_curve(he.edge) {
                 return Some(g);
             }
             // A cap rim edge: the neighboring wall carries the cylinder.
@@ -494,7 +494,7 @@ pub(crate) fn offset_loop(
 
     // Debug-build invariant (rule 2's spirit for a pure computation): every
     // output edge claiming a circle has both endpoints on that circle —
-    // the same claim the solid-side validator holds `Edge::curve` to.
+    // the same claim the solid-side validator holds `EdgeArcs::curve` to.
     #[cfg(debug_assertions)]
     for j in 0..m {
         if let Some(g) = curves[j] {

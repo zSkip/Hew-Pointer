@@ -1471,7 +1471,7 @@ fn slant_cut_rim_offers_no_center() {
 // -------------------------------- imprint → push-through (playtest fix C3)
 // the true-curves design, playtest fix C3: a circle drawn on a solid face
 // carries its analytic identity onto the imprinted solid edges
-// (`Object::split_face_inner_with_curve` → `Edge::curve`), so pushing that
+// (`Object::split_face_inner_with_curve` → `EdgeArcs::curve`), so pushing that
 // face THROUGH the solid re-attributes the tunnel walls as
 // `SurfaceRef::Cylinder`. Without it the circle dies at the imprint, the
 // tunnel walls are bare facets, and a whole-wall push refuses.
@@ -1678,7 +1678,7 @@ fn a_wrong_curve_claim_at_imprint_is_refused_not_repaired() {
 
 #[test]
 fn thickening_a_box_after_bossing_an_imprinted_circle_maps_the_claim() {
-    // Map-or-drop for `Edge::curve` on a SUBSET-vertex move (adversarial
+    // Map-or-drop for `EdgeArcs::curve` on a SUBSET-vertex move (adversarial
     // review, critical). Imprint a circle (rim edges carry the claim), boss it
     // up, then push the holed top face to thicken the box. Thickening moves
     // the base-ring vertices off the stored circle: the claim must MAP (move
@@ -1690,8 +1690,11 @@ fn thickening_a_box_after_bossing_an_imprinted_circle_maps_the_claim() {
     // whole, so its claim maps rather than drops.
     let (h, r) = (1.0, 0.5);
     let (mut obj, disk) = imprint_circle(2.0, 2.0, h, r);
-    let claims =
-        |obj: &Object| -> Vec<CurveGeom> { obj.edges().values().filter_map(|e| e.curve).collect() };
+    let claims = |obj: &Object| -> Vec<CurveGeom> {
+        obj.edge_arc_entries()
+            .filter_map(|(_, a)| a.curve)
+            .collect()
+    };
     let at = |claims: &[CurveGeom], z: f64| {
         claims
             .iter()
@@ -1732,7 +1735,7 @@ fn thickening_a_box_after_bossing_an_imprinted_circle_maps_the_claim() {
     assert_eq!(at(&c, h + 0.3), 24, "the unmoved boss top keeps its claim");
 }
 
-/// Undoing a boss-wall push keeps `Edge::curve` claims consistent. A boss
+/// Undoing a boss-wall push keeps `EdgeArcs::curve` claims consistent. A boss
 /// raised from an imprinted circle now carries `SurfaceRef::Cylinder` on its
 /// side walls (playtest Part A), so pushing a boss wall routes to the
 /// WHOLE-WALL radial offset (`offset_cylinder_wall`), whose recorded inverse
@@ -1793,7 +1796,7 @@ fn undoing_a_boss_wall_push_keeps_edge_curve_claims_consistent() {
         .undo(&mut obj)
         .expect("undo of the boss-wall push succeeds");
     obj.validate()
-        .expect("no stale Edge::curve claim survives the inverse offset");
+        .expect("no stale EdgeArcs::curve claim survives the inverse offset");
 }
 
 // -------------------------------------------- boss stamping (playtest Part A)
@@ -1899,7 +1902,7 @@ fn shrinking_a_boss_wall_past_its_radius_refuses_typed() {
 fn bossing_a_rectangular_imprint_stays_flat() {
     // A mixed/partial loop stamps nothing — a rectangle's sides are on no one
     // circle, so `split_face_inner` leaves the sub-face's boundary edges with
-    // no `Edge::curve` claim and the boss walls stay honest flat facets.
+    // no `EdgeArcs::curve` claim and the boss walls stay honest flat facets.
     let h = 1.0;
     let mut obj = box_obj(2.0, 2.0, h);
     let top = top_cap(&obj, h);
@@ -1951,7 +1954,9 @@ fn bossing_an_arc_closed_by_a_chord_stamps_the_arc_not_the_chord() {
         .sub_face;
     // The imprint DID stamp every edge (all endpoints are on the circle)…
     assert_eq!(
-        obj.edges().values().filter(|e| e.curve.is_some()).count(),
+        obj.edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
+            .count(),
         21,
         "the imprint stamps all 21 arc+chord edges (endpoints on the circle)"
     );
@@ -1967,7 +1972,9 @@ fn bossing_an_arc_closed_by_a_chord_stamps_the_arc_not_the_chord() {
     // The raised rim carries the arc's claims (20) but not the secant's,
     // where push-through and inference would read a "facet" the wall refused.
     assert_eq!(
-        obj.edges().values().filter(|e| e.curve.is_some()).count(),
+        obj.edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
+            .count(),
         41,
         "21 on the unmoved base ring, 20 on the raised arc"
     );
@@ -1992,7 +1999,9 @@ fn boss_concyclic(n: usize, r: f64, h: f64) -> (Object, usize) {
         .sub_face;
     // Every edge carries the shared claim (all vertices lie on the circle).
     assert_eq!(
-        obj.edges().values().filter(|e| e.curve.is_some()).count(),
+        obj.edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
+            .count(),
         n,
         "the imprint stamps all {n} concyclic edges"
     );
@@ -2047,7 +2056,7 @@ fn bossing_a_48gon_circle_stamps_every_facet() {
 
 /// A boss whose wall was then whole-wall offset must survive a full History
 /// unwind/replay (DEVELOPMENT.md rule 9). The boss stamps `Face::surface`
-/// from `Edge::curve`, which the offset drops; without restoring the surface
+/// from `EdgeArcs::curve`, which the offset drops; without restoring the surface
 /// on rule-9 alignment, the re-done boss comes back a bare facet, the re-done
 /// offset reroutes to translate-and-build, and replay DIVERGES. Red-check:
 /// drop the `surface` restore in `StateProof::verify_and_align` and the redo
@@ -2145,9 +2154,8 @@ fn push_holed_disk(ring: &[Point3], r: f64, h: f64, d: f64) -> Object {
 }
 
 fn claims_at(obj: &Object, z: f64, r: f64) -> usize {
-    obj.edges()
-        .values()
-        .filter_map(|e| e.curve)
+    obj.edge_arc_entries()
+        .filter_map(|(_, a)| a.curve)
         .filter(|g| {
             g.center
                 .approx_eq(Point3::new(0.0, 0.0, z), tol::POINT_MERGE)

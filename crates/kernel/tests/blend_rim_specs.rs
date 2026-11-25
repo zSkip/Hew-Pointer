@@ -103,10 +103,9 @@ fn cylinder_top_rim_torus() {
     );
     // Every rail is an arc of a circle about the axis.
     let rails_with_curves = after
-        .edges()
-        .values()
-        .filter(|e| {
-            e.curve
+        .edge_arc_entries()
+        .filter(|(_, a)| {
+            a.curve
                 .is_some_and(|c| (c.radius - 0.4).abs() < 1e-12 || (c.radius - 0.5).abs() < 1e-12)
         })
         .count();

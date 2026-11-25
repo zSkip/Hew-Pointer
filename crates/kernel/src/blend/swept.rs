@@ -3410,15 +3410,16 @@ fn cut_and_remove(
             for (a, b) in p.segments() {
                 if let Some(e) = original_edge(obj, *f, pts.pos(a), pts.pos(b)) {
                     let ed = &obj.edges()[e];
-                    if ed.soft || ed.crease || ed.curve.is_some() {
+                    let arcs = obj.edge_arcs(e);
+                    if ed.soft || ed.crease || arcs.curve.is_some() {
                         out.meta(
                             a,
                             b,
                             EdgeMeta {
                                 soft: ed.soft,
                                 crease: ed.crease,
-                                curve: ed.curve,
-                                polygon: ed.polygon,
+                                curve: arcs.curve,
+                                polygon: arcs.polygon,
                             },
                         );
                     }

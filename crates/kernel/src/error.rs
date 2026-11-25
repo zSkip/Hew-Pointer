@@ -177,7 +177,7 @@ pub enum TopologyError {
         /// The offending face.
         face: FaceId,
     },
-    /// An edge's analytic circle claim ([`crate::topo::Edge::curve`])
+    /// An edge's analytic circle claim ([`crate::topo::EdgeArcs::curve`])
     /// disagrees with its geometry: a degenerate radius, or an endpoint not
     /// within tolerance of the claimed radius from the center (the edge is
     /// not a chord facet of that circle). A stale claim is a validator

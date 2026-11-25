@@ -1351,7 +1351,7 @@ impl<'d> Author<'d> {
             };
             // The circle the edge is a chord of: its own claim, else the
             // rim where a cylinder wall meets a face off that cylinder.
-            let claim = e.curve.or_else(|| match (near, far) {
+            let claim = obj.edge_curve(eid).or_else(|| match (near, far) {
                 (Some(w), other) | (other, Some(w))
                     if !seam && other.is_none_or(|o| !o.same_surface(&w)) =>
                 {

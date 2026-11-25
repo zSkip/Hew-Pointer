@@ -828,7 +828,7 @@ pub(crate) fn topology_block(
             adjacent.push(obj.loops()[obj.half_edges()[t].loop_id].face);
         }
         // A circle's axis: the cylinder it rims, else the face it lies on.
-        let curve = match (e.curve, scale) {
+        let curve = match (obj.edge_curve(eid), scale) {
             (Some(c), Some(s)) => {
                 let axis = adjacent
                     .iter()

@@ -47,12 +47,12 @@ use crate::transform::Transform;
 /// radius — when present; absent in v1-v3 files → all `surface = None`).
 /// The extruded side walls of arc/circle profiles carry it
 /// (the true-curves design).
-/// v4 → v5: per-face optional edge-curve claims ([`crate::topo::Edge::curve`])
+/// v4 → v5: per-face optional edge-curve claims ([`crate::topo::EdgeArcs::curve`])
 /// appended AFTER each face's hole loops — a `u8` "any" flag (0 = no edge of
 /// this face carries a circle, the common case, one byte; 1 = per-loop-edge
 /// arrays follow: for every outer edge then every hole edge, a `u8` flag +
 /// 4×f64 center xyz + radius when present). Absent in v1-v4 files → all
-/// `Edge::curve = None`. An imprinted circle awaiting its push-through
+/// `EdgeArcs::curve = None`. An imprinted circle awaiting its push-through
 /// persists its identity here (the true-curves design, playtest fix C3).
 /// v5 → v6: per-face optional SOFT flags ([`crate::topo::Edge::soft`])
 /// appended after each face's hole loops and BEFORE the edge-curve block —
@@ -61,10 +61,10 @@ use crate::transform::Transform;
 /// load. Absent in v1-v5 files → no soft edges. Sweep facet seams persist
 /// here.
 /// v6 → v7: per-face optional regular-polygon claims
-/// ([`crate::topo::Edge::polygon`]) appended AFTER each face's edge-curve
+/// ([`crate::topo::EdgeArcs::polygon`]) appended AFTER each face's edge-curve
 /// block, in the same shape (a `u8` "any" flag; when 1, for every outer
 /// edge then every hole edge, a `u8` flag + 4×f64 circumcircle center xyz +
-/// radius when present). Absent in v1-v6 files → all `Edge::polygon =
+/// radius when present). Absent in v1-v6 files → all `EdgeArcs::polygon =
 /// None`. A polygon drawn on a face keeps its identity here (unified
 /// drafting).
 /// v7 → v8: per-face back paint ([`crate::topo::Face::back_material`]),
@@ -1734,7 +1734,7 @@ impl Object {
                 .map(|&v| {
                     self.loop_half_edges(loop_id)
                         .find(|&h| self.half_edges[h].origin == v)
-                        .and_then(|h| self.edges[self.half_edges[h].edge].curve)
+                        .and_then(|h| self.edge_curve(self.half_edges[h].edge))
                 })
                 .collect()
         };
@@ -1746,7 +1746,7 @@ impl Object {
                 .map(|&v| {
                     self.loop_half_edges(loop_id)
                         .find(|&h| self.half_edges[h].origin == v)
-                        .and_then(|h| self.edges[self.half_edges[h].edge].polygon)
+                        .and_then(|h| self.edge_polygon(self.half_edges[h].edge))
                 })
                 .collect()
         };
@@ -2176,7 +2176,7 @@ impl Object {
             }
 
             // per-face polygon claims (v7): the edge-curve block's shape, for
-            // [`crate::topo::Edge::polygon`], written after it.
+            // [`crate::topo::EdgeArcs::polygon`], written after it.
             let any_poly = cf
                 .outer_polys
                 .iter()
@@ -2876,7 +2876,7 @@ impl Object {
                         continue;
                     };
                     let e = obj.half_edges[h].edge;
-                    if let Some(existing) = obj.edges[e].curve {
+                    if let Some(existing) = obj.edge_curve(e) {
                         let agree = existing.center.approx_eq(g.center, crate::tol::POINT_MERGE)
                             && (existing.radius - g.radius).abs() <= crate::tol::POINT_MERGE;
                         if !agree {
@@ -2886,7 +2886,7 @@ impl Object {
                             });
                         }
                     }
-                    obj.edges[e].curve = Some(g);
+                    obj.set_edge_curve(e, Some(g));
                 }
             }
         }
@@ -2905,7 +2905,7 @@ impl Object {
                         continue;
                     };
                     let e = obj.half_edges[h].edge;
-                    if let Some(existing) = obj.edges[e].polygon {
+                    if let Some(existing) = obj.edge_polygon(e) {
                         let agree = existing.center.approx_eq(g.center, crate::tol::POINT_MERGE)
                             && (existing.radius - g.radius).abs() <= crate::tol::POINT_MERGE;
                         if !agree {
@@ -2915,7 +2915,7 @@ impl Object {
                             });
                         }
                     }
-                    obj.edges[e].polygon = Some(g);
+                    obj.set_edge_polygon(e, Some(g));
                 }
             }
         }

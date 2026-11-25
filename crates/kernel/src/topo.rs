@@ -79,6 +79,47 @@ pub struct Edge {
     pub half_edge: HalfEdgeId,
     /// `None` on a boundary edge.
     pub twin_half_edge: Option<HalfEdgeId>,
+    /// SOFT edge (design §7b): the transverse joint between two sweep wall
+    /// facets of one drawn curve — a facet seam of a smooth surface, not a
+    /// real crease. The tessellator smooths shading across it and routes
+    /// its line to the suppressed soft buffer. Marked only at sweep birth
+    /// where the adjacent path bands share one [`CurveGeom`] (never a
+    /// dihedral guess); survives ANY transform that keeps the edge itself
+    /// (`apply_transform` never reads or resets it — not only rigid maps,
+    /// since a swept curve's smooth-shading claim stays true under a
+    /// non-uniform scale too), and survives splitting the edge (a mid-edge
+    /// split is still the same drawn-curve joint on both fragments — unlike
+    /// [`EdgeArcs::curve`], whose chord claim a split genuinely invalidates).
+    /// Dropped only where the edge itself does not survive: booleans
+    /// rebuild edges fresh. A soft edge must be interior (have a twin) —
+    /// pinned by the validator. Persisted in geometry buffer v6.
+    pub soft: bool,
+    /// The user's keep-sharp-under-Smooth mark (true-curves.md §6.1): set by
+    /// the Eraser's Ctrl/Cmd gesture, never derived. Interior only, and never
+    /// together with `soft` (a soft seam cannot crease) — both pinned by the
+    /// validator. Survives splits (both fragments keep it) and every
+    /// transform, similarity or not: a crease is a statement about the edge,
+    /// not about any analytic shape. Dropped where the edge does not survive,
+    /// except that booleans re-derive it by provenance. Persisted in
+    /// geometry buffer v10.
+    pub crease: bool,
+    /// The edge's attribute dictionary ([`Object::edge_attrs`]), or
+    /// [`AttrSlot::NONE`]. Like `soft`, it rides the edge's identity: an
+    /// op that keeps the `EdgeId` keeps it, both fragments of a split edge
+    /// take it, and an edge built from positions (a builder, a boolean, a
+    /// component rebuild) starts without one. Persisted in geometry buffer
+    /// v9.
+    pub attrs: AttrSlot,
+}
+
+/// An edge's circle records ([`Object::edge_arcs`]), held out of line in
+/// the Object's arc table rather than in [`Edge`]: only arc, circle and
+/// polygon edges have one, and keeping them inline cost every edge of a
+/// dense mesh 80 bytes it never used. The table holds an entry only for a
+/// live edge with at least one record (pinned by the validator); an edge
+/// without an entry has neither.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct EdgeArcs {
     /// The analytic circle this edge is a chord facet of, when known — the
     /// solid-side mirror of [`crate::sketch::SketchEdge::curve`] +
     /// [`crate::sketch::CurveGeom`]. Set when an arc/circle is imprinted onto
@@ -99,49 +140,41 @@ pub struct Edge {
     /// `IMPORT_PLANE_DIST` for imported) of `radius` from `center`. Persisted
     /// in geometry buffer v5.
     pub curve: Option<crate::sketch::CurveGeom>,
-    /// SOFT edge (design §7b): the transverse joint between two sweep wall
-    /// facets of one drawn curve — a facet seam of a smooth surface, not a
-    /// real crease. The tessellator smooths shading across it and routes
-    /// its line to the suppressed soft buffer. Marked only at sweep birth
-    /// where the adjacent path bands share one [`CurveGeom`] (never a
-    /// dihedral guess); survives ANY transform that keeps the edge itself
-    /// (`apply_transform` never reads or resets it — not only rigid maps,
-    /// since a swept curve's smooth-shading claim stays true under a
-    /// non-uniform scale too), and survives splitting the edge (a mid-edge
-    /// split is still the same drawn-curve joint on both fragments — unlike
-    /// `curve` above, whose chord claim a split genuinely invalidates).
-    /// Dropped only where the edge itself does not survive: booleans
-    /// rebuild edges fresh. A soft edge must be interior (have a twin) —
-    /// pinned by the validator. Persisted in geometry buffer v6.
-    pub soft: bool,
     /// The regular polygon this edge is a side (or a piece of a side) of,
     /// when it was drawn as one: the polygon's circumcircle. The sides ARE
     /// the geometry, so no analytic consumer reads it (no surface, rim, or
     /// smoothing comes of it); the drafting engine lifts marked edges back
     /// into one polygon chain, so a polygon drawn on a face selects as one
-    /// and offers its center, exactly as on the ground. Like `soft`, it
+    /// and offers its center, exactly as on the ground. Like [`Edge::soft`], it
     /// survives a split (a piece of a side is still that polygon's) and is
     /// dropped only where the edge does not survive (booleans rebuild edges
-    /// fresh); like `curve`, it maps under a similarity and is dropped under
+    /// fresh); like [`EdgeArcs::curve`], it maps under a similarity and is dropped under
     /// any other transform (a stretched polygon is no longer regular).
     /// Persisted in geometry buffer v7.
     pub polygon: Option<crate::sketch::CurveGeom>,
-    /// The user's keep-sharp-under-Smooth mark (true-curves.md §6.1): set by
-    /// the Eraser's Ctrl/Cmd gesture, never derived. Interior only, and never
-    /// together with `soft` (a soft seam cannot crease) — both pinned by the
-    /// validator. Survives splits (both fragments keep it) and every
-    /// transform, similarity or not: a crease is a statement about the edge,
-    /// not about any analytic shape. Dropped where the edge does not survive,
-    /// except that booleans re-derive it by provenance. Persisted in
-    /// geometry buffer v10.
-    pub crease: bool,
-    /// The edge's attribute dictionary ([`Object::edge_attrs`]), or
-    /// [`AttrSlot::NONE`]. Like `soft`, it rides the edge's identity: an
-    /// op that keeps the `EdgeId` keeps it, both fragments of a split edge
-    /// take it, and an edge built from positions (a builder, a boolean, a
-    /// component rebuild) starts without one. Persisted in geometry buffer
-    /// v9.
-    pub attrs: AttrSlot,
+}
+
+impl EdgeArcs {
+    /// Whether the edge has neither record.
+    pub fn is_empty(&self) -> bool {
+        self.curve.is_none() && self.polygon.is_none()
+    }
+
+    /// Whether `self` and `other` hold the same records bit for bit (so
+    /// `-0.0` and `0.0` differ, as they do in a saved file).
+    fn same_bits(&self, other: &EdgeArcs) -> bool {
+        fn bits(g: Option<crate::sketch::CurveGeom>) -> Option<[u64; 4]> {
+            g.map(|g| {
+                [
+                    g.center.x.to_bits(),
+                    g.center.y.to_bits(),
+                    g.center.z.to_bits(),
+                    g.radius.to_bits(),
+                ]
+            })
+        }
+        bits(self.curve) == bits(other.curve) && bits(self.polygon) == bits(other.polygon)
+    }
 }
 
 /// Whether a loop is a face's outer boundary or a hole.
@@ -497,6 +530,15 @@ pub struct Object {
     pub(crate) vertices: Shared<SlotMap<VertexId, Vertex>>,
     pub(crate) half_edges: Shared<SlotMap<HalfEdgeId, HalfEdge>>,
     pub(crate) edges: Shared<SlotMap<EdgeId, Edge>>,
+    /// The circle records of the edges that have any ([`EdgeArcs`]), by
+    /// edge: an entry per live edge with a record, none for any other.
+    /// Sparse, since most edges have none; ordered by id, so a walk visits
+    /// edges in slot order. Copy-on-write like the element tables. Read
+    /// through [`Object::edge_curve`] / [`Object::edge_polygon`], written
+    /// through [`Object::set_edge_curve`] / [`Object::set_edge_polygon`] /
+    /// [`Object::set_edge_arcs`], and cleared with the edge by
+    /// [`Object::remove_edge`].
+    pub(crate) edge_arcs: Shared<BTreeMap<EdgeId, EdgeArcs>>,
     pub(crate) loops: Shared<SlotMap<LoopId, Loop>>,
     pub(crate) faces: Shared<SlotMap<FaceId, Face>>,
     pub(crate) shells: Shared<SlotMap<ShellId, Shell>>,
@@ -543,6 +585,7 @@ pub(crate) struct ObjectStamp {
     vertices: Watch<SlotMap<VertexId, Vertex>>,
     half_edges: Watch<SlotMap<HalfEdgeId, HalfEdge>>,
     edges: Watch<SlotMap<EdgeId, Edge>>,
+    edge_arcs: Watch<BTreeMap<EdgeId, EdgeArcs>>,
     loops: Watch<SlotMap<LoopId, Loop>>,
     faces: Watch<SlotMap<FaceId, Face>>,
     shells: Watch<SlotMap<ShellId, Shell>>,
@@ -562,6 +605,7 @@ impl Object {
             vertices,
             half_edges,
             edges,
+            edge_arcs,
             loops,
             faces,
             shells,
@@ -575,6 +619,7 @@ impl Object {
             vertices: vertices.watch(),
             half_edges: half_edges.watch(),
             edges: edges.watch(),
+            edge_arcs: edge_arcs.watch(),
             loops: loops.watch(),
             faces: faces.watch(),
             shells: shells.watch(),
@@ -593,6 +638,7 @@ impl Object {
             vertices,
             half_edges,
             edges,
+            edge_arcs,
             loops,
             faces,
             shells,
@@ -605,6 +651,7 @@ impl Object {
         vertices.is_watched_by(&stamp.vertices)
             && half_edges.is_watched_by(&stamp.half_edges)
             && edges.is_watched_by(&stamp.edges)
+            && edge_arcs.is_watched_by(&stamp.edge_arcs)
             && loops.is_watched_by(&stamp.loops)
             && faces.is_watched_by(&stamp.faces)
             && shells.is_watched_by(&stamp.shells)
@@ -624,6 +671,7 @@ impl Object {
             vertices: Shared::new(SlotMap::with_key()),
             half_edges: Shared::new(SlotMap::with_key()),
             edges: Shared::new(SlotMap::with_key()),
+            edge_arcs: Shared::new(BTreeMap::new()),
             loops: Shared::new(SlotMap::with_key()),
             faces: Shared::new(SlotMap::with_key()),
             shells: Shared::new(SlotMap::with_key()),
@@ -640,7 +688,7 @@ impl Object {
     /// ([`crate::shared`]). Capacity-based and O(1) per table except the
     /// shells' face lists (a handful of shells per object), so a dense
     /// mesh costs nothing extra to measure.
-    pub(crate) fn table_footprints(&self) -> [(usize, usize); 6] {
+    pub(crate) fn table_footprints(&self) -> [(usize, usize); 7] {
         use crate::shared::slotmap_heap_bytes as table;
         let shell_lists: usize = self
             .shells
@@ -651,6 +699,10 @@ impl Object {
             (self.vertices.addr(), table(&self.vertices)),
             (self.half_edges.addr(), table(&self.half_edges)),
             (self.edges.addr(), table(&self.edges)),
+            (
+                self.edge_arcs.addr(),
+                crate::shared::btree_heap_bytes(&self.edge_arcs),
+            ),
             (self.loops.addr(), table(&self.loops)),
             (self.faces.addr(), table(&self.faces)),
             (self.shells.addr(), table(&self.shells) + shell_lists),
@@ -688,6 +740,108 @@ impl Object {
     /// Edge storage (read-only).
     pub fn edges(&self) -> &SlotMap<EdgeId, Edge> {
         &self.edges
+    }
+
+    /// The circle records of `edge` ([`EdgeArcs`]): empty when it has none
+    /// or is not in this Object.
+    pub fn edge_arcs(&self, edge: EdgeId) -> EdgeArcs {
+        self.edge_arcs.get(&edge).copied().unwrap_or_default()
+    }
+
+    /// The analytic circle `edge` is a chord facet of ([`EdgeArcs::curve`]),
+    /// if it has one.
+    pub fn edge_curve(&self, edge: EdgeId) -> Option<crate::sketch::CurveGeom> {
+        self.edge_arcs.get(&edge).and_then(|a| a.curve)
+    }
+
+    /// The regular polygon `edge` is a side of ([`EdgeArcs::polygon`]), if
+    /// it has one.
+    pub fn edge_polygon(&self, edge: EdgeId) -> Option<crate::sketch::CurveGeom> {
+        self.edge_arcs.get(&edge).and_then(|a| a.polygon)
+    }
+
+    /// Every edge with a circle record, with its records, in slot order.
+    pub fn edge_arc_entries(&self) -> impl Iterator<Item = (EdgeId, EdgeArcs)> + '_ {
+        self.edge_arcs.iter().map(|(&e, &a)| (e, a))
+    }
+
+    /// Gives `edge` exactly the records `arcs` (empty clears them). The
+    /// caller guarantees `edge` is live. Writes the table only when the
+    /// records change, so an edge without records costs no copy of a shared
+    /// table.
+    pub(crate) fn set_edge_arcs(&mut self, edge: EdgeId, arcs: EdgeArcs) {
+        debug_assert!(self.edges.contains_key(edge), "arcs for a dead edge");
+        if self.edge_arcs(edge).same_bits(&arcs) {
+            return;
+        }
+        if arcs.is_empty() {
+            self.edge_arcs.remove(&edge);
+        } else {
+            self.edge_arcs.insert(edge, arcs);
+        }
+    }
+
+    /// Sets `edge`'s [`EdgeArcs::curve`], keeping its polygon record.
+    pub(crate) fn set_edge_curve(&mut self, edge: EdgeId, curve: Option<crate::sketch::CurveGeom>) {
+        let arcs = EdgeArcs {
+            curve,
+            ..self.edge_arcs(edge)
+        };
+        self.set_edge_arcs(edge, arcs);
+    }
+
+    /// Sets `edge`'s [`EdgeArcs::polygon`], keeping its curve record.
+    pub(crate) fn set_edge_polygon(
+        &mut self,
+        edge: EdgeId,
+        polygon: Option<crate::sketch::CurveGeom>,
+    ) {
+        let arcs = EdgeArcs {
+            polygon,
+            ..self.edge_arcs(edge)
+        };
+        self.set_edge_arcs(edge, arcs);
+    }
+
+    /// Replaces every circle record `g` with `map(g)` (curve and polygon
+    /// alike), dropping records that map to `None`. Leaves the table
+    /// untouched (and shared with any snapshot) when it is empty.
+    pub(crate) fn map_edge_arcs(
+        &mut self,
+        map: impl Fn(Option<crate::sketch::CurveGeom>) -> Option<crate::sketch::CurveGeom>,
+    ) {
+        if self.edge_arcs.is_empty() {
+            return;
+        }
+        let mapped: BTreeMap<EdgeId, EdgeArcs> = self
+            .edge_arcs
+            .iter()
+            .map(|(&e, a)| {
+                let arcs = EdgeArcs {
+                    curve: map(a.curve),
+                    polygon: map(a.polygon),
+                };
+                (e, arcs)
+            })
+            .filter(|(_, a)| !a.is_empty())
+            .collect();
+        self.edge_arcs = Shared::new(mapped);
+    }
+
+    /// Inserts `edge` with the circle records `arcs`, returning its id.
+    pub(crate) fn insert_edge(&mut self, edge: Edge, arcs: EdgeArcs) -> EdgeId {
+        let id = self.edges.insert(edge);
+        self.set_edge_arcs(id, arcs);
+        id
+    }
+
+    /// Removes `edge` and its circle records, returning the edge.
+    pub(crate) fn remove_edge(&mut self, edge: EdgeId) -> Option<Edge> {
+        let removed = self.edges.remove(edge)?;
+        if self.edge_arcs.contains_key(&edge) {
+            self.edge_arcs.remove(&edge);
+        }
+        Some(removed)
     }
 
     /// Loop storage (read-only).
@@ -1084,7 +1238,7 @@ impl Object {
 
     /// The rim circles of this object's imprinted circle edges: a circle
     /// drawn on a face carries its analytic identity on every loop edge
-    /// ([`Edge::curve`]), and this reports it in the same [`AnalyticRim`]
+    /// ([`EdgeArcs::curve`]), and this reports it in the same [`AnalyticRim`]
     /// shape [`Object::analytic_rims`] uses for cylinder walls, so inference
     /// offers a drawn circle's center, quadrants, and tangents exactly as it
     /// does for a circle sketched on the ground. One rim per distinct claimed
@@ -1101,15 +1255,16 @@ impl Object {
     }
 
     /// The centers of the regular polygons drawn on this object's faces
-    /// (edges carrying [`Edge::polygon`]), once each, with a face one of its
+    /// (edges carrying [`EdgeArcs::polygon`]), once each, with a face one of its
     /// sides bounds — the [`crate::sketch::Sketch::polygon_centers`] of a
     /// face drawing, offered to inference as center snaps.
     pub fn edge_polygon_centers(&self) -> Vec<(Point3, FaceId)> {
         let mut out: Vec<(Point3, FaceId)> = Vec::new();
-        for edge in self.edges.values() {
-            let Some(g) = edge.polygon else {
+        for (&id, arcs) in self.edge_arcs.iter() {
+            let Some(g) = arcs.polygon else {
                 continue;
             };
+            let edge = &self.edges[id];
             if out
                 .iter()
                 .any(|(c, _)| c.approx_eq(g.center, crate::tol::POINT_MERGE))
@@ -1143,10 +1298,11 @@ impl Object {
                 || (a + b).length() < crate::tol::NORMAL_DIRECTION
         };
         let mut groups: Vec<Group> = Vec::new();
-        for (_, edge) in &self.edges {
-            let Some(geom) = edge.curve else {
+        for (&id, arcs) in self.edge_arcs.iter() {
+            let Some(geom) = arcs.curve else {
                 continue;
             };
+            let edge = &self.edges[id];
             let he = &self.half_edges[edge.half_edge];
             // The circle's plane is the adjacent face that CONTAINS its
             // center: both sides of an imprinted circle, the cap (never the
@@ -1367,6 +1523,20 @@ pub(crate) fn merge_angular_intervals(
 }
 
 #[cfg(test)]
+mod record_size_tests {
+    use super::*;
+
+    /// An edge record carries no circle data inline: a dense mesh has
+    /// about one and a half edges per triangle, and the records that only
+    /// arc, circle and polygon edges use live in the Object's arc table.
+    #[test]
+    fn an_edge_record_stays_small() {
+        let size = std::mem::size_of::<Edge>();
+        assert!(size <= 24, "Edge is {size} bytes");
+    }
+}
+
+#[cfg(test)]
 mod edge_curve_rim_tests {
     use super::*;
     use crate::math::Point3;
@@ -1427,10 +1597,13 @@ mod edge_curve_rim_tests {
                         || (p.approx_eq(b, 1e-12) && q.approx_eq(a, 1e-12))
                 })
                 .unwrap();
-            obj.edges[e].curve = Some(CurveGeom {
-                center: Point3::new(0.5, 0.0, 1.0),
-                radius: 0.5,
-            });
+            obj.set_edge_curve(
+                e,
+                Some(CurveGeom {
+                    center: Point3::new(0.5, 0.0, 1.0),
+                    radius: 0.5,
+                }),
+            );
             (obj, va, vb, e)
         };
 
@@ -1444,7 +1617,7 @@ mod edge_curve_rim_tests {
         }
         obj.map_translated_edge_curves(&before, &[va, vb].into_iter().collect(), sweep);
         obj.drop_stale_edge_curves();
-        let g = obj.edges[e].curve.expect("a whole-translated chord maps");
+        let g = obj.edge_curve(e).expect("a whole-translated chord maps");
         assert!(g.center.approx_eq(Point3::new(0.5, 0.0, 1.25), 1e-12));
         assert_eq!(g.radius, 0.5);
 
@@ -1454,13 +1627,12 @@ mod edge_curve_rim_tests {
         obj.vertices[va].position = obj.vertices[va].position + sweep;
         obj.map_translated_edge_curves(&before, &[va].into_iter().collect(), sweep);
         assert!(
-            obj.edges[e]
-                .curve
+            obj.edge_curve(e)
                 .is_some_and(|g| g.center.approx_eq(original, 1e-12)),
             "a half-moved chord is not mapped"
         );
         obj.drop_stale_edge_curves();
-        assert!(obj.edges[e].curve.is_none(), "and its stale claim drops");
+        assert!(obj.edge_curve(e).is_none(), "and its stale claim drops");
 
         // Both moved, but not by the sweep: never mapped, then dropped.
         let (mut obj, va, vb, e) = setup();
@@ -1470,7 +1642,7 @@ mod edge_curve_rim_tests {
         }
         obj.map_translated_edge_curves(&before, &[va, vb].into_iter().collect(), sweep);
         obj.drop_stale_edge_curves();
-        assert!(obj.edges[e].curve.is_none(), "an off-sweep move drops");
+        assert!(obj.edge_curve(e).is_none(), "an off-sweep move drops");
 
         // Both endpoints in the moved set but left in place (a wall's bottom
         // edge keeps the moved face's original ids): never mapped, and the
@@ -1480,8 +1652,7 @@ mod edge_curve_rim_tests {
         obj.map_translated_edge_curves(&before, &[va, vb].into_iter().collect(), sweep);
         obj.drop_stale_edge_curves();
         assert!(
-            obj.edges[e]
-                .curve
+            obj.edge_curve(e)
                 .is_some_and(|g| g.center.approx_eq(original, 1e-12)),
             "a stationary edge keeps its original claim"
         );
@@ -1515,8 +1686,8 @@ mod edge_curve_rim_tests {
         };
         let top_front = edge_between(&obj, Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0));
         let side_front = edge_between(&obj, Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0));
-        obj.edges[top_front].curve = Some(g);
-        obj.edges[side_front].curve = Some(g);
+        obj.set_edge_curve(top_front, Some(g));
+        obj.set_edge_curve(side_front, Some(g));
         let rims = obj.edge_curve_rims();
         assert_eq!(rims.len(), 2, "one rim per plane orientation: {rims:?}");
         let along =

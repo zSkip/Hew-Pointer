@@ -759,7 +759,7 @@ fn execute_near(
         .iter()
         .map(|&e| {
             let x = result.edges()[e];
-            (x.soft, x.crease, x.curve)
+            (x.soft, x.crease, result.edge_curve(e))
         })
         .collect();
     crate::rederive::rederive_edges_after_boolean(
@@ -773,16 +773,19 @@ fn execute_near(
     let mut check: Vec<FaceId> = new_faces.clone();
     for (&e, was) in edges.iter().zip(&before) {
         let x = result.edges()[e];
-        if (x.soft, x.crease, x.curve) != *was {
+        if (x.soft, x.crease, result.edge_curve(e)) != *was {
             for h in std::iter::once(x.half_edge).chain(x.twin_half_edge) {
                 check.push(result.loops()[result.half_edges()[h].loop_id].face);
             }
         }
     }
-    if result.edges().values().any(|e| e.polygon.is_some()) {
-        for e in result.edges.values_mut() {
-            e.polygon = None;
-        }
+    let polygons: Vec<EdgeId> = result
+        .edge_arc_entries()
+        .filter(|(_, a)| a.polygon.is_some())
+        .map(|(e, _)| e)
+        .collect();
+    for e in polygons {
+        result.set_edge_polygon(e, None);
     }
     check.sort_unstable();
     check.dedup();

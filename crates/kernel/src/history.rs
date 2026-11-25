@@ -659,7 +659,7 @@ fn edge_bits_key(a: Point3, b: Point3) -> [u64; 6] {
 /// alignment: `Face::surface` decides push/pull routing (a facet claiming a
 /// cylinder offsets the whole wall; a bare facet translates-and-builds), so a
 /// replay that re-created the face — a re-done `extrude_sub_face` boss whose
-/// stamp derives from a now-dropped `Edge::curve`, say — must come back
+/// stamp derives from a now-dropped `EdgeArcs::curve`, say — must come back
 /// carrying the surface the recorded state had, or the NEXT op reroutes and
 /// diverges. Restoring it is the same "the aligned state IS the accepted
 /// state" principle the plane/position restore already applies.
@@ -818,9 +818,10 @@ impl StateProof {
                 .keys()
                 .filter_map(|e| {
                     let edge = &object.edges()[e];
-                    if edge.curve.is_none()
+                    let arcs = object.edge_arcs(e);
+                    if arcs.curve.is_none()
                         && !edge.soft
-                        && edge.polygon.is_none()
+                        && arcs.polygon.is_none()
                         && !edge.crease
                         && edge.attrs.is_none()
                     {
@@ -830,9 +831,9 @@ impl StateProof {
                     Some(EdgeClaimProof {
                         a,
                         b,
-                        curve: edge.curve,
+                        curve: arcs.curve,
                         soft: edge.soft,
-                        polygon: edge.polygon,
+                        polygon: arcs.polygon,
                         crease: edge.crease,
                         attrs: object.attr_dict(edge.attrs).cloned().unwrap_or_default(),
                     })
@@ -1011,9 +1012,11 @@ impl StateProof {
         // single claimed, soft, or dictionary-carrying edge (the common case
         // for objects with no drawn circles, sweeps, or edge dictionaries),
         // so there is nothing to restore or clear.
-        let candidate_has_claims = candidate.edges().values().any(|e| {
-            e.curve.is_some() || e.soft || e.polygon.is_some() || e.crease || !e.attrs.is_none()
-        });
+        let candidate_has_claims = candidate.edge_arc_entries().next().is_some()
+            || candidate
+                .edges()
+                .values()
+                .any(|e| e.soft || e.crease || !e.attrs.is_none());
         if !self.edges.is_empty() || candidate_has_claims {
             // Restore every edge's circle claim, soft flag, and dictionary to
             // the recorded state (see `StateProof::edges`): claimed edges get
@@ -1053,9 +1056,8 @@ impl StateProof {
                         }
                         None => (None, false, None, false, &no_attrs),
                     };
-                candidate.edges[e].curve = curve;
+                candidate.set_edge_arcs(e, crate::topo::EdgeArcs { curve, polygon });
                 candidate.edges[e].soft = soft;
-                candidate.edges[e].polygon = polygon;
                 candidate.edges[e].crease = crease;
                 candidate.set_edge_attrs(e, attrs.clone());
             }
@@ -1571,7 +1573,7 @@ fn reconstruct_merge_runs(object: &Object, edge: EdgeId) -> Vec<MergeRun> {
             let mut pts = object.run_positions(piece);
             let mut cs: Vec<Option<CurveGeom>> = piece
                 .iter()
-                .map(|&h| object.edges()[object.half_edges()[h].edge].curve)
+                .map(|&h| object.edge_curve(object.half_edges()[h].edge))
                 .collect();
             if lex(pts.last().expect("a run has points"), &pts[0]) == std::cmp::Ordering::Less {
                 pts.reverse();
@@ -1684,7 +1686,7 @@ fn reconstruct_merge_path(object: &Object, edge: EdgeId) -> (Vec<Point3>, Vec<Op
     loop {
         let origin_v = object.half_edges()[cur].origin;
         path.push(object.vertices()[origin_v].position);
-        curves.push(object.edges()[object.half_edges()[cur].edge].curve);
+        curves.push(object.edge_curve(object.half_edges()[cur].edge));
         let nxt = object.half_edges()[cur].next;
         if shared_set_a.contains(&nxt) {
             cur = nxt;

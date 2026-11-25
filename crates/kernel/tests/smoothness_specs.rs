@@ -185,7 +185,7 @@ fn boolean_regains_cylinder_rim_claims() {
     );
     for &e in &top_rim {
         assert_eq!(
-            result.edges()[e].curve,
+            result.edge_curve(e),
             Some(CurveGeom {
                 center: p3(0.0, 0.0, h),
                 radius: r

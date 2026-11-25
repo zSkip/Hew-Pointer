@@ -17,14 +17,14 @@ use crate::trig;
 
 /// The circle the loop of `face` holding `edge` runs on, as (center, axis,
 /// radius): every edge of the loop a chord of one attributed circle
-/// (`Edge::curve`, as an extrusion's or a coaxial Loft's cap carries), in
+/// (`EdgeArcs::curve`, as an extrusion's or a coaxial Loft's cap carries), in
 /// the face's plane, the axis its normal.
 fn loop_circle(
     obj: &Object,
     face: FaceId,
     edge: crate::ids::EdgeId,
 ) -> Option<(Point3, Vec3, f64)> {
-    let g = obj.edges()[edge].curve?;
+    let g = obj.edge_curve(edge)?;
     let l = obj.face_loops(face).into_iter().find(|&l| {
         obj.loop_half_edges(l)
             .any(|h| obj.half_edges()[h].edge == edge)
@@ -37,7 +37,7 @@ fn loop_circle(
     };
     if !obj
         .loop_half_edges(l)
-        .all(|h| same(obj.edges()[obj.half_edges()[h].edge].curve))
+        .all(|h| same(obj.edge_curve(obj.half_edges()[h].edge)))
     {
         return None;
     }

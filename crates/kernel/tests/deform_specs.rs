@@ -280,7 +280,7 @@ fn cylinder_twist_drops_claims_keeps_soft() {
         d.faces().values().all(|f| f.surface.is_none()),
         "claims dropped"
     );
-    assert!(d.edges().values().all(|e| e.curve.is_none()));
+    assert!(d.edge_arc_entries().all(|(_, a)| a.curve.is_none()));
     // Every former facet seam (a vertical wall edge) is soft.
     let soft_seams = d
         .edges()

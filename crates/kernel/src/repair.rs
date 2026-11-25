@@ -672,10 +672,13 @@ impl Object {
             for v in moved.vertices.values_mut() {
                 v.position = v.position + shift;
             }
-            for e in moved.edges.values_mut() {
-                if let Some(c) = e.curve.as_mut() {
-                    c.center = c.center + shift;
-                }
+            let curves: Vec<(crate::ids::EdgeId, crate::sketch::CurveGeom)> = moved
+                .edge_arc_entries()
+                .filter_map(|(e, arcs)| Some((e, arcs.curve?)))
+                .collect();
+            for (e, mut c) in curves {
+                c.center = c.center + shift;
+                moved.set_edge_curve(e, Some(c));
             }
             obj.carry_edge_claims(&moved);
         }
@@ -891,14 +894,13 @@ impl Object {
             .filter_map(|e| {
                 let (a, b) = self.edge_endpoints(e)?;
                 let edge = &self.edges[e];
-                (edge.curve.is_some() || edge.polygon.is_some() || edge.soft || edge.crease).then(
-                    || {
-                        (
-                            claim_key(a, b),
-                            (edge.curve, edge.polygon, edge.soft, edge.crease),
-                        )
-                    },
-                )
+                let arcs = self.edge_arcs(e);
+                (!arcs.is_empty() || edge.soft || edge.crease).then(|| {
+                    (
+                        claim_key(a, b),
+                        (arcs.curve, arcs.polygon, edge.soft, edge.crease),
+                    )
+                })
             })
             .collect()
     }
@@ -914,7 +916,8 @@ impl Object {
             .collect();
         let mut out: Vec<EdgeClaims> = vec![BTreeMap::new(); pieces.len()];
         for (e, edge) in &self.edges {
-            if !(edge.curve.is_some() || edge.polygon.is_some() || edge.soft || edge.crease) {
+            let arcs = self.edge_arcs(e);
+            if !(!arcs.is_empty() || edge.soft || edge.crease) {
                 continue;
             }
             let face = self.loops[self.half_edges[edge.half_edge].loop_id].face;
@@ -923,7 +926,7 @@ impl Object {
             };
             out[i].insert(
                 claim_key(a, b),
-                (edge.curve, edge.polygon, edge.soft, edge.crease),
+                (arcs.curve, arcs.polygon, edge.soft, edge.crease),
             );
         }
         out
@@ -940,9 +943,8 @@ impl Object {
                 continue;
             };
             if let Some(&(curve, polygon, soft, crease)) = claims.get(&claim_key(a, b)) {
+                self.set_edge_arcs(e, crate::topo::EdgeArcs { curve, polygon });
                 let edge = &mut self.edges[e];
-                edge.curve = curve;
-                edge.polygon = polygon;
                 edge.soft = soft && edge.twin_half_edge.is_some();
                 edge.crease = crease && edge.twin_half_edge.is_some();
             }
@@ -1168,7 +1170,7 @@ impl Object {
                             edge.crease = false;
                         }
                         None => {
-                            self.edges.remove(he.edge);
+                            self.remove_edge(he.edge);
                         }
                     }
                 }

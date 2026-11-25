@@ -114,3 +114,10 @@ pub(crate) fn slotmap_heap_bytes<K: Key, V>(map: &SlotMap<K, V>) -> usize {
     let slot = (std::mem::size_of::<V>() + 4).div_ceil(align) * align;
     map.capacity() * slot
 }
+
+/// An estimate of the heap a B-tree map holds: each entry's key and value
+/// plus a share of node overhead (B-tree nodes run about two-thirds full).
+/// O(1).
+pub(crate) fn btree_heap_bytes<K, V>(map: &std::collections::BTreeMap<K, V>) -> usize {
+    map.len() * (std::mem::size_of::<K>() + std::mem::size_of::<V>()) * 3 / 2
+}

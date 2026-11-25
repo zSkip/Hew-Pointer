@@ -691,8 +691,8 @@ fn capture(before: &Object, after: &Object, id: BlendId, spec: &BlendSpec) -> Op
             meta: EdgeMeta {
                 soft: edge.soft,
                 crease: edge.crease,
-                curve: edge.curve,
-                polygon: edge.polygon,
+                curve: before.edge_curve(e),
+                polygon: before.edge_polygon(e),
             },
         });
     }

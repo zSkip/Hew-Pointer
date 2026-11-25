@@ -495,7 +495,7 @@ fn world_circle(
         }) => Some((axis_point, axis, radius)),
         _ => None,
     });
-    if let Some(c) = e.curve {
+    if let Some(c) = object.edge_curve(edge) {
         let axis = cylinder
             .map(|(_, axis, _)| pose.apply_vector(axis))
             .unwrap_or_else(|| pose.apply_normal(object.faces()[faces[0]].plane.normal()));

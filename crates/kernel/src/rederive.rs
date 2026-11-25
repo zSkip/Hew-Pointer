@@ -80,7 +80,8 @@ fn edges_by_face_pair_of(
         let Some(twin) = e.twin_half_edge else {
             continue;
         };
-        if !e.soft && !e.crease && e.curve.is_none() {
+        let curve = obj.edge_curve(eid);
+        if !e.soft && !e.crease && curve.is_none() {
             continue;
         }
         let face_of = |h| obj.loops()[obj.half_edges()[h].loop_id].face;
@@ -95,7 +96,7 @@ fn edges_by_face_pair_of(
                 b,
                 soft: e.soft,
                 crease: e.crease,
-                curve: e.curve,
+                curve,
                 planarity_tol: obj.planarity_tol,
             });
     }
@@ -251,6 +252,6 @@ fn rederive_edges(
         let edge = &mut result.edges[eid];
         edge.crease = crease;
         edge.soft = soft;
-        edge.curve = curve;
+        result.set_edge_curve(eid, curve);
     }
 }

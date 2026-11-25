@@ -118,7 +118,10 @@ fn box_edge_fillet_counts() {
     assert!(matches!(claims[0], SurfaceRef::Cylinder { .. }));
     assert!(claims.iter().all(|c| c.same_surface(&claims[0])));
     // The run-outs into both end faces carry arc curves.
-    let curved = after.edges().values().filter(|e| e.curve.is_some()).count();
+    let curved = after
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
     assert_eq!(curved, 12);
     for r in rails(&after, &report.new_faces, Vec3::new(1.0, 0.0, 0.0)) {
         assert_eq!(after.edge_smoothness(r), EdgeSmoothness::Tangent);
@@ -198,7 +201,10 @@ fn concave_inner_edge_fillet() {
         (delta - fillet_area(0.1, FRAC_PI_2, 6)).abs() <= 1e-12,
         "material is added: {delta}"
     );
-    let curved = after.edges().values().filter(|e| e.curve.is_some()).count();
+    let curved = after
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
     assert_eq!(curved, 12, "run-outs into the top and bottom");
 }
 

@@ -49,7 +49,7 @@ pub struct RetracePath {
     pub path: Vec<Point3>,
     /// One claim per path edge, or empty.
     pub curves: Vec<Option<CurveGeom>>,
-    /// One regular-polygon claim per path edge ([`crate::topo::Edge::polygon`]),
+    /// One regular-polygon claim per path edge ([`crate::topo::EdgeArcs::polygon`]),
     /// or empty.
     pub polygons: Vec<Option<CurveGeom>>,
     /// One soft mark per path edge ([`crate::topo::Edge::soft`]), or empty
@@ -254,8 +254,8 @@ impl Object {
                     return Err(StickyError::PathNotSimple);
                 }
                 path.push(b);
-                curves.push(edge.curve);
-                polygons.push(edge.polygon);
+                curves.push(self.edge_curve(e));
+                polygons.push(self.edge_polygon(e));
                 soft.push(edge.soft);
                 removed_edges.push(e);
             }
@@ -591,7 +591,7 @@ impl Object {
                 dest.remove(&h);
                 old_face.remove(&h);
             }
-            obj.edges.remove(e);
+            obj.remove_edge(e);
         }
 
         // 4. Insert the paths.
@@ -607,10 +607,10 @@ impl Object {
             }
             for (k, &e) in edges.iter().enumerate() {
                 if let Some(&g) = insert[pi].curves.get(k) {
-                    obj.edges[e].curve = g;
+                    obj.set_edge_curve(e, g);
                 }
                 if let Some(&g) = insert[pi].polygons.get(k) {
-                    obj.edges[e].polygon = g;
+                    obj.set_edge_polygon(e, g);
                 }
                 if let Some(&soft) = insert[pi].soft.get(k) {
                     obj.edges[e].soft = soft;

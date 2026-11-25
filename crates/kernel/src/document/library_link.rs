@@ -835,7 +835,8 @@ impl Document {
             if edge.soft {
                 soft.push(pair);
             }
-            for (claim, list) in [(edge.curve, &mut circles), (edge.polygon, &mut polygons)] {
+            let arcs = obj.edge_arcs(e);
+            for (claim, list) in [(arcs.curve, &mut circles), (arcs.polygon, &mut polygons)] {
                 if let Some(g) = claim {
                     let c = qp(g.center);
                     list.push([

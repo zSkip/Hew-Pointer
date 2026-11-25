@@ -591,7 +591,7 @@ pub fn geometry_hash(doc: &Document, obj: &Object) -> u64 {
     let mut edges: Vec<u64> = obj
         .edges()
         .iter()
-        .map(|(_, e)| {
+        .map(|(eid, e)| {
             let mut h = Fnv::new();
             let mut ends = [
                 pos(he[e.half_edge].origin),
@@ -603,7 +603,7 @@ pub fn geometry_hash(doc: &Document, obj: &Object) -> u64 {
             if e.crease {
                 h.u64(u64::MAX);
             }
-            if let Some(g) = e.curve {
+            if let Some(g) = obj.edge_curve(eid) {
                 for c in [g.center.x, g.center.y, g.center.z, g.radius] {
                     h.f(c);
                 }
