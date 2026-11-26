@@ -27,10 +27,7 @@ use std::io::{Cursor, Read};
 
 use kernel::Document;
 
-use crate::{
-    ExportError, MODEL_3MF_XMLNS, RELS_XML, build_3mf_objects, collect_export_solids,
-    render_3mf_model, world_roots, xml_escape, zip_add_stored_entry,
-};
+use crate::{ExportError, Model3mf, RELS_XML, build_3mf_model, world_roots, write_3mf_package};
 
 /// The zip entry name of the embedded document part (OPC part name
 /// `/Metadata/borpa_document.hew`).
@@ -108,7 +105,7 @@ pub fn export_3mf_with_document(
 ) -> Result<Vec<u8>, ExportError> {
     let normalized = doc.session_closed();
     let doc: &Document = &normalized;
-    let solids = match collect_export_solids(
+    let model = match build_3mf_model(
         doc,
         &world_roots(doc),
         segments_per_turn,
@@ -116,49 +113,25 @@ pub fn export_3mf_with_document(
         true,
         cages,
     ) {
-        Ok(solids) => solids,
-        Err(ExportError::NothingToExport) => Vec::new(),
+        Ok(model) => model,
+        Err(ExportError::NothingToExport) => Model3mf::default(),
         Err(e) => return Err(e),
     };
-    let version = env!("CARGO_PKG_VERSION");
-    let (objects, palette) = build_3mf_objects(&solids);
-    let model = if objects.is_empty() {
-        empty_3mf_model(version)
-    } else {
-        render_3mf_model(&objects, &palette, version)
-    };
-
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::<u8>::new()));
-    zip_add_stored_entry(
-        &mut zip,
-        "[Content_Types].xml",
-        CONTENT_TYPES_WITH_DOCUMENT_XML.as_bytes(),
-        1,
-    )
-    .expect("zip write must not fail");
-    zip_add_stored_entry(&mut zip, "_rels/.rels", RELS_XML.as_bytes(), 1)
-        .expect("zip write must not fail");
-    zip_add_stored_entry(&mut zip, "3D/3dmodel.model", model.as_bytes(), 1)
-        .expect("zip write must not fail");
-    zip_add_stored_entry(&mut zip, EMBEDDED_DOCUMENT_PART, document, 1)
-        .expect("zip write must not fail");
-    Ok(zip.finish().expect("zip finish must not fail").into_inner())
-}
-
-/// The model part of a package with nothing to mesh: no resources, an
-/// empty build (the core spec allows zero items).
-fn empty_3mf_model(version: &str) -> String {
-    format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
-         <model unit=\"meter\" xml:lang=\"und\" xmlns=\"{MODEL_3MF_XMLNS}\">\n \
-         <metadata name=\"Application\">Hew {}</metadata>\n \
-         <resources>\n \
-         </resources>\n \
-         <build>\n \
-         </build>\n\
-         </model>\n",
-        xml_escape(version)
-    )
+    // With nothing to mesh the model part lists no resources and an empty
+    // build (the core spec allows zero items).
+    Ok(write_3mf_package(
+        &model,
+        env!("CARGO_PKG_VERSION"),
+        &[
+            (
+                "[Content_Types].xml",
+                CONTENT_TYPES_WITH_DOCUMENT_XML.as_bytes(),
+            ),
+            ("_rels/.rels", RELS_XML.as_bytes()),
+            (EMBEDDED_DOCUMENT_PART, document),
+        ],
+        2,
+    ))
 }
 
 /// Reads the document bytes back out of a package
