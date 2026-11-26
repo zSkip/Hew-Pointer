@@ -1077,6 +1077,15 @@ impl Object {
         &self.shells
     }
 
+    /// How many triangles the stored faces make, from the table sizes
+    /// alone: a face of `n` corners with holes of `h₁, h₂, …` corners
+    /// triangulates into `n − 2 + Σ(hᵢ + 2)`, so the object makes
+    /// `half-edges + 2·loops − 4·faces`. What a step that tessellates or
+    /// draws every face sizes its memory by ([`crate::memory`]).
+    pub fn triangle_count(&self) -> usize {
+        (self.half_edges.len() + 2 * self.loops.len()).saturating_sub(4 * self.faces.len())
+    }
+
     /// Whether this Object currently encloses a volume.
     pub fn watertight(&self) -> WatertightState {
         self.watertight
@@ -2012,5 +2021,56 @@ mod edge_curve_rim_tests {
         );
         // The walls-supplied form agrees with the self-computed one.
         assert_eq!(obj.edge_curve_rims_with(&obj.analytic_rims()), rims);
+    }
+}
+
+#[cfg(test)]
+mod triangle_count_tests {
+    use super::*;
+    use crate::math::Point3;
+
+    #[test]
+    fn triangle_count_is_what_the_stored_faces_triangulate_into() {
+        let v = |x: f64, y: f64, z: f64| Point3::new(x, y, z);
+        // A cube of quads: two triangles a face.
+        let cube = Object::from_polygons(
+            &[
+                v(0.0, 0.0, 0.0),
+                v(1.0, 0.0, 0.0),
+                v(1.0, 1.0, 0.0),
+                v(0.0, 1.0, 0.0),
+                v(0.0, 0.0, 1.0),
+                v(1.0, 0.0, 1.0),
+                v(1.0, 1.0, 1.0),
+                v(0.0, 1.0, 1.0),
+            ],
+            &[
+                vec![0, 3, 2, 1],
+                vec![4, 5, 6, 7],
+                vec![0, 1, 5, 4],
+                vec![1, 2, 6, 5],
+                vec![2, 3, 7, 6],
+                vec![3, 0, 4, 7],
+            ],
+        )
+        .unwrap();
+        assert_eq!(cube.triangle_count(), 12);
+        // A square with a square hole: the ring between them is 8 triangles.
+        let frame = Object::from_polygons_with_holes_import_for_test(
+            &[
+                v(0.0, 0.0, 0.0),
+                v(3.0, 0.0, 0.0),
+                v(3.0, 3.0, 0.0),
+                v(0.0, 3.0, 0.0),
+                v(1.0, 1.0, 0.0),
+                v(1.0, 2.0, 0.0),
+                v(2.0, 2.0, 0.0),
+                v(2.0, 1.0, 0.0),
+            ],
+            &[vec![0, 1, 2, 3]],
+            &[vec![vec![4, 5, 6, 7]]],
+        )
+        .unwrap();
+        assert_eq!(frame.triangle_count(), 8);
     }
 }

@@ -94,7 +94,8 @@ impl std::error::Error for EmbeddedDocumentError {}
 /// caller's serialization of `doc`; it is not inspected.
 ///
 /// Deterministic: the same inputs give the same bytes. Refuses only what
-/// meshing itself refuses (`export_failed`, `too_many_occurrences`); a
+/// meshing itself refuses (`export_failed`, `too_many_occurrences`) and a
+/// package that cannot fit in the memory left (`export_too_large`); a
 /// document with nothing to mesh writes a model with no objects.
 pub fn export_3mf_with_document(
     doc: &Document,
@@ -112,6 +113,7 @@ pub fn export_3mf_with_document(
         solids_only,
         true,
         cages,
+        document.len(),
     ) {
         Ok(model) => model,
         Err(ExportError::NothingToExport) => Model3mf::default(),
@@ -119,7 +121,7 @@ pub fn export_3mf_with_document(
     };
     // With nothing to mesh the model part lists no resources and an empty
     // build (the core spec allows zero items).
-    Ok(write_3mf_package(
+    write_3mf_package(
         &model,
         env!("CARGO_PKG_VERSION"),
         &[
@@ -131,7 +133,7 @@ pub fn export_3mf_with_document(
             (EMBEDDED_DOCUMENT_PART, document),
         ],
         2,
-    ))
+    )
 }
 
 /// Reads the document bytes back out of a package

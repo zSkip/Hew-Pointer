@@ -762,6 +762,27 @@ fn load_rejects_garbage() {
     assert!(Document::load(b"not a zip at all").is_err());
 }
 
+/// A load that cannot fit in the memory left refuses `TooLarge` before
+/// reading any geometry, instead of ending the WebAssembly kernel; the
+/// estimate is [`kernel::serialize::LOAD_BYTES_PER_GEOMETRY_BYTE`] per byte
+/// of geometry entry, at most the file's own length.
+#[test]
+fn load_refuses_too_large_when_memory_is_short() {
+    let mut doc = Document::new();
+    extrude_box(&mut doc, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0);
+    let bytes = doc.save();
+    assert_eq!(
+        kernel::memory::with_limit(0, || Document::load(&bytes)).expect_err("no room"),
+        kernel::LoadError::TooLarge
+    );
+    let room = bytes.len() * kernel::serialize::LOAD_BYTES_PER_GEOMETRY_BYTE;
+    let loaded = kernel::memory::with_limit(room, || Document::load(&bytes)).expect("fits");
+    assert_eq!(loaded.visible_object_ids().len(), 1);
+    // A document with no geometry needs no room for it.
+    let empty = Document::new().save();
+    kernel::memory::with_limit(0, || Document::load(&empty)).expect("nothing to hold");
+}
+
 #[test]
 //#[ignore = "spec for Document::load: a truncated container is rejected, never panic"]
 fn load_rejects_truncation() {

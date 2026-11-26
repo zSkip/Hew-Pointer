@@ -957,6 +957,10 @@ pub enum LoadError {
     },
     /// A geometry buffer failed to decode or validate. Surfaced verbatim.
     Geometry(DecodeError),
+    /// Loading would need more memory than is left ([`crate::memory`]),
+    /// estimated from the geometry entries' sizes: refused before any of
+    /// them is read.
+    TooLarge,
 }
 
 impl std::fmt::Display for LoadError {
@@ -973,6 +977,9 @@ impl std::fmt::Display for LoadError {
             LoadError::DanglingReference { what } => write!(f, "dangling reference: {what}"),
             LoadError::MissingAsset { path } => write!(f, "missing container entry: {path}"),
             LoadError::Geometry(e) => write!(f, "{e}"),
+            LoadError::TooLarge => {
+                write!(f, "the document is too large to open in the memory left")
+            }
         }
     }
 }
@@ -4882,6 +4889,26 @@ fn zip_read_entry<R: Read + Seek>(
     zip_read_entry_sized(zip, name, 0)
 }
 
+/// What [`crate::Document::load`] holds at its peak per byte of geometry
+/// entry: the entries read, each object built from its entry, and the
+/// tables and side lists of the build. Measured on the WebAssembly build
+/// at about 9 (330 MB for a 37 MB document of 1M triangles, 612 MB for
+/// 68 MB at 2M), with a margin.
+pub const LOAD_BYTES_PER_GEOMETRY_BYTE: usize = 10;
+
+/// The largest single buffer a load allocates per byte of the largest
+/// geometry entry: that object's half-edge table, sized exactly.
+const LOAD_LARGEST_PER_ENTRY_BYTE: usize = 3;
+
+/// What loading geometry entries of `geometry_bytes` in all, the largest
+/// `largest_entry`, needs at its peak ([`LOAD_BYTES_PER_GEOMETRY_BYTE`]).
+pub fn load_need(geometry_bytes: usize, largest_entry: usize) -> crate::memory::Need {
+    crate::memory::Need::new(
+        geometry_bytes.saturating_mul(LOAD_BYTES_PER_GEOMETRY_BYTE),
+        largest_entry.saturating_mul(LOAD_LARGEST_PER_ENTRY_BYTE),
+    )
+}
+
 /// [`zip_read_entry`] into a buffer sized up front to the entry's declared
 /// length when that is at most `container_len` (the archive's own length; a
 /// stored entry is never longer), so a large geometry buffer is read without
@@ -5959,6 +5986,24 @@ pub(crate) fn decode_document_raw(bytes: &[u8]) -> Result<DocLoadRaw, LoadError>
             texture,
             pbr,
         });
+    }
+
+    // Refuse before reading any geometry when the load cannot fit in the
+    // memory left. Every entry is stored, so none is longer than the
+    // container: a larger declared size is not trusted.
+    let container_len = bytes.len();
+    let (mut geometry_bytes, mut largest_entry) = (0usize, 0usize);
+    for obj_dto in &manifest.objects {
+        if let Ok(entry) = zip.by_name(&obj_dto.geometry) {
+            let size = usize::try_from(entry.size())
+                .unwrap_or(usize::MAX)
+                .min(container_len);
+            geometry_bytes = geometry_bytes.saturating_add(size);
+            largest_entry = largest_entry.max(size);
+        }
+    }
+    if !crate::memory::has_room(load_need(geometry_bytes.min(container_len), largest_entry)) {
+        return Err(LoadError::TooLarge);
     }
 
     // Read geometry buffers.

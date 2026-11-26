@@ -4338,6 +4338,7 @@ Export the attached document — STL, 3MF, glTF/GLB, USDZ (solids only), or a Sk
 **Refusals:**
 
 - `export_failed`
+- `export_too_large`
 - `host_capability_missing`
 - `nothing_to_export`
 - `save_failed`

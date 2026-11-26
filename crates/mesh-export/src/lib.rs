@@ -120,6 +120,13 @@ pub enum ExportError {
     /// A selection root holds more leaf placements than one occurrence
     /// walk lists (`Document::occurrences`'s cap).
     TooManyOccurrences,
+    /// Writing the file would need more memory than is left
+    /// ([`kernel::memory`]): refused before anything is tessellated, with
+    /// the triangle count the estimate was made from when there is one.
+    TooLarge {
+        /// The triangles the export would write.
+        triangles: Option<usize>,
+    },
 }
 
 impl ExportError {
@@ -133,6 +140,7 @@ impl ExportError {
             ExportError::StlIntegrity(_) => "export_failed",
             ExportError::UnsupportedFormat(_) => "host_capability_missing",
             ExportError::TooManyOccurrences => "too_many_occurrences",
+            ExportError::TooLarge { .. } => "export_too_large",
         }
     }
 
@@ -153,7 +161,119 @@ impl ExportError {
             ExportError::TooManyOccurrences => {
                 "That selection holds more placed parts than one export can list. Select fewer parts.".to_string()
             }
+            ExportError::TooLarge {
+                triangles: Some(n),
+            } => format!(
+                "There isn't enough memory left to write this model ({} triangles). Reduce or split the model and try again.",
+                thousands(*n)
+            ),
+            ExportError::TooLarge { triangles: None } => {
+                "There isn't enough memory left to write this model. Reduce or split the model and try again.".to_string()
+            }
         }
+    }
+}
+
+/// `n` with a comma between each group of three digits.
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+// --------------------------------------------------------------- memory
+
+/// What a writer holds at its peak per exported triangle, and its largest
+/// single buffer per triangle ([`ensure_room`]).
+#[derive(Clone, Copy)]
+struct Cost {
+    per_triangle: usize,
+    largest_per_triangle: usize,
+}
+
+/// 3MF: one solid's soup and weld while the model is built, then the
+/// welded model and the package written into it (90 to 100 bytes a
+/// triangle for meter coordinates written in full, the largest buffer).
+/// Measured on the WebAssembly build at 165 bytes a triangle.
+const COST_3MF: Cost = Cost {
+    per_triangle: 180,
+    largest_per_triangle: 110,
+};
+
+/// STL: every exported triangle's corners (72 bytes, the largest buffer)
+/// and a flag, then the largest solid's topology check or the output (50).
+/// Measured at 72 to 106 bytes a triangle on WebAssembly, 161 natively.
+const COST_STL: Cost = Cost {
+    per_triangle: 180,
+    largest_per_triangle: 72,
+};
+
+/// GLB and USDZ: every solid collected with its colors, materials and UVs
+/// (about 120 bytes a triangle), then the welded buffers and the file.
+const COST_FULL: Cost = Cost {
+    per_triangle: 260,
+    largest_per_triangle: 72,
+};
+
+/// Refuses [`ExportError::TooLarge`] when writing `roots` at `cost`, plus
+/// `extra` bytes the package carries as they are, cannot fit in the
+/// memory left ([`kernel::memory::has_room`]). Walks the same leaves the
+/// writer will, counting each object's stored triangles
+/// ([`kernel::Object::triangle_count`]; a Smooth surface's by its level);
+/// curves re-faceted finer than stored add more.
+fn ensure_room(
+    doc: &Document,
+    roots: &[RenderRoot],
+    solids_only: bool,
+    whole: bool,
+    cages: bool,
+    cost: Cost,
+    extra: usize,
+) -> Result<(), ExportError> {
+    let mut seen = BTreeSet::new();
+    let mut triangles = 0usize;
+    for root in roots {
+        for (member, _, _) in root_leaves(doc, root, (!whole).then_some(&mut seen))?.leaves {
+            if solids_only && !doc.object_solid(member) {
+                continue;
+            }
+            let Some(obj) = doc.object(member) else {
+                continue;
+            };
+            let stored = obj.triangle_count();
+            let level = u32::from(doc.smooth_level(member));
+            // Each level splits a face into quads (an n-gon into n, then
+            // each quad into four), two triangles a quad.
+            let count = if level == 0 || cages {
+                stored
+            } else {
+                stored
+                    .saturating_mul(6)
+                    .saturating_mul(4usize.saturating_pow(level - 1))
+            };
+            triangles = triangles.saturating_add(count);
+        }
+    }
+    let need = kernel::memory::Need::new(
+        triangles
+            .saturating_mul(cost.per_triangle)
+            .saturating_add(extra),
+        triangles
+            .saturating_mul(cost.largest_per_triangle)
+            .saturating_add(extra),
+    );
+    if kernel::memory::has_room(need) {
+        Ok(())
+    } else {
+        Err(ExportError::TooLarge {
+            triangles: Some(triangles),
+        })
     }
 }
 
@@ -234,8 +354,9 @@ fn export_roots(
     match format {
         "stl" => stl_from_roots(doc, roots, segments_per_turn, solids_only, whole, cages),
         "3mf" => {
-            let model = build_3mf_model(doc, roots, segments_per_turn, solids_only, whole, cages)?;
-            write_3mf(&model).ok_or(ExportError::NothingToExport)
+            let model =
+                build_3mf_model(doc, roots, segments_per_turn, solids_only, whole, cages, 0)?;
+            write_3mf(&model)?.ok_or(ExportError::NothingToExport)
         }
         "glb" | "gltf" => {
             let solids =
@@ -522,6 +643,7 @@ pub(crate) fn collect_export_solids(
     whole: bool,
     cages: bool,
 ) -> Result<Vec<ExportSolid>, ExportError> {
+    ensure_room(doc, roots, solids_only, whole, cages, COST_FULL, 0)?;
     let mut solids = Vec::new();
     for_each_export_solid(
         doc,
@@ -692,6 +814,7 @@ fn stl_from_roots(
     whole: bool,
     cages: bool,
 ) -> Result<Vec<u8>, ExportError> {
+    ensure_room(doc, roots, solids_only, whole, cages, COST_STL, 0)?;
     let mut soup: Vec<f64> = Vec::new();
     // Validate each claimed solid independently: STL flattens the scene,
     // and independent objects/placements may legitimately share coordinates.
@@ -816,7 +939,11 @@ fn write_binary_stl(
         .ok_or(ExportError::StlIntegrity(
             "binary STL exceeds the addressable file size",
         ))?;
-    let mut out = Vec::with_capacity(bytes);
+    let mut out = Vec::new();
+    out.try_reserve_exact(bytes)
+        .map_err(|_| ExportError::TooLarge {
+            triangles: Some(kept),
+        })?;
     out.extend_from_slice(&header);
     out.extend_from_slice(&count.to_le_bytes());
     for (tri, _) in soup.chunks_exact(9).zip(&written).filter(|(_, w)| **w) {
@@ -1065,8 +1192,9 @@ pub fn export_3mf(
         solids_only,
         true,
         cages,
+        0,
     )?;
-    write_3mf(&model).ok_or(ExportError::NothingToExport)
+    write_3mf(&model)?.ok_or(ExportError::NothingToExport)
 }
 
 /// One `<object>` of the model part.
@@ -1101,10 +1229,18 @@ impl Model3mf {
     pub(crate) fn is_empty(&self) -> bool {
         self.objects.is_empty()
     }
+
+    /// The triangles the model part lists.
+    fn triangle_count(&self) -> usize {
+        self.objects.iter().map(|o| o.triangles.len()).sum()
+    }
 }
 
 /// The 3MF model of `roots`, built one solid at a time (each solid's
-/// triangle soup is freed as soon as it is welded).
+/// triangle soup is freed as soon as it is welded). Refuses
+/// [`ExportError::TooLarge`] first when the model and a package carrying
+/// `extra` more bytes cannot fit in the memory left.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_3mf_model(
     doc: &Document,
     roots: &[RenderRoot],
@@ -1112,7 +1248,9 @@ pub(crate) fn build_3mf_model(
     solids_only: bool,
     whole: bool,
     cages: bool,
+    extra: usize,
 ) -> Result<Model3mf, ExportError> {
+    ensure_room(doc, roots, solids_only, whole, cages, COST_3MF, extra)?;
     let mut model = Model3mf::default();
     for_each_export_solid(
         doc,
@@ -1442,13 +1580,14 @@ const ZIP_END_OVERHEAD: usize = 22 + 56 + 20 + 64;
 /// part `3D/3dmodel.model` written from `model` after the first `before`
 /// of them. The output is sized up front from the parts, so it is never
 /// copied into a buffer that grows by doubling, and the model text goes
-/// straight into it.
+/// straight into it; [`ExportError::TooLarge`] when that size cannot be
+/// allocated.
 pub(crate) fn write_3mf_package(
     model: &Model3mf,
     version: &str,
     parts: &[(&str, &[u8])],
     before: usize,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, ExportError> {
     const MODEL_PART: &str = "3D/3dmodel.model";
     let model_len = model_3mf_len(model, version);
     let capacity = parts
@@ -1459,7 +1598,13 @@ pub(crate) fn write_3mf_package(
         + 2 * MODEL_PART.len()
         + ZIP_ENTRY_OVERHEAD
         + ZIP_END_OVERHEAD;
-    let mut zip = zip::ZipWriter::new(Cursor::new(Vec::<u8>::with_capacity(capacity)));
+    let mut buffer = Vec::<u8>::new();
+    buffer
+        .try_reserve_exact(capacity)
+        .map_err(|_| ExportError::TooLarge {
+            triangles: Some(model.triangle_count()),
+        })?;
+    let mut zip = zip::ZipWriter::new(Cursor::new(buffer));
     for (name, data) in &parts[..before] {
         zip_add_stored_entry(&mut zip, name, data, 1).expect("zip write must not fail");
     }
@@ -1472,18 +1617,18 @@ pub(crate) fn write_3mf_package(
     for (name, data) in &parts[before..] {
         zip_add_stored_entry(&mut zip, name, data, 1).expect("zip write must not fail");
     }
-    zip.finish().expect("zip finish must not fail").into_inner()
+    Ok(zip.finish().expect("zip finish must not fail").into_inner())
 }
 
 /// Assembles the minimal core-spec OPC container: `[Content_Types].xml`,
 /// `_rels/.rels`, `3D/3dmodel.model` — mirrors `threeMfExport.ts`'s
 /// `writeThreeMf`'s three-entry layout. Returns `None` when no solid
 /// contributes a triangle (every object empty or fully degenerate).
-fn write_3mf(model: &Model3mf) -> Option<Vec<u8>> {
+fn write_3mf(model: &Model3mf) -> Result<Option<Vec<u8>>, ExportError> {
     if model.is_empty() {
-        return None;
+        return Ok(None);
     }
-    Some(write_3mf_package(
+    write_3mf_package(
         model,
         env!("CARGO_PKG_VERSION"),
         &[
@@ -1491,7 +1636,8 @@ fn write_3mf(model: &Model3mf) -> Option<Vec<u8>> {
             ("_rels/.rels", RELS_XML.as_bytes()),
         ],
         2,
-    ))
+    )
+    .map(Some)
 }
 
 // -------------------------------------------------------------------- GLB
@@ -3057,6 +3203,127 @@ mod tests {
             ExportError::UnsupportedFormat("obj".to_string()).name(),
             "host_capability_missing"
         );
+        assert_eq!(
+            ExportError::TooLarge { triangles: None }.name(),
+            "export_too_large"
+        );
+    }
+
+    // ------------------------------------------------------------- memory
+
+    /// The refusal's plain message, with and without the triangle count.
+    #[test]
+    fn too_large_says_what_to_do_in_plain_words() {
+        assert_eq!(
+            ExportError::TooLarge {
+                triangles: Some(5_000_000)
+            }
+            .message(),
+            "There isn't enough memory left to write this model (5,000,000 triangles). Reduce or split the model and try again."
+        );
+        assert_eq!(
+            ExportError::TooLarge { triangles: None }.message(),
+            "There isn't enough memory left to write this model. Reduce or split the model and try again."
+        );
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(1000), "1,000");
+        assert_eq!(thousands(12_345_678), "12,345,678");
+    }
+
+    fn assert_too_large(result: Result<Vec<u8>, ExportError>, triangles: usize) {
+        match result {
+            Err(ExportError::TooLarge { triangles: t }) => assert_eq!(t, Some(triangles)),
+            Err(e) => panic!("expected export_too_large, got {}", e.name()),
+            Ok(_) => panic!("expected export_too_large, got a file"),
+        }
+    }
+
+    /// Every writer refuses `export_too_large` before tessellating when its
+    /// estimate (the format's bytes a triangle times the triangles it would
+    /// write) does not fit in the memory left, and writes the same file as
+    /// ever at exactly its estimate.
+    #[test]
+    fn every_format_refuses_too_large_when_memory_is_short() {
+        use kernel::memory::with_limit;
+        let doc = box_document();
+        let cases: [(&str, Cost); 4] = [
+            ("stl", COST_STL),
+            ("3mf", COST_3MF),
+            ("glb", COST_FULL),
+            ("usdz", COST_FULL),
+        ];
+        for (format, cost) in cases {
+            let need = 12 * cost.per_triangle;
+            assert_too_large(
+                with_limit(need - 1, || export(&doc, format, 0, true, false)),
+                12,
+            );
+            let fits = with_limit(need, || export(&doc, format, 0, true, false)).expect(format);
+            assert_eq!(
+                fits,
+                export(&doc, format, 0, true, false).unwrap(),
+                "{format}"
+            );
+        }
+        assert_too_large(
+            with_limit(12 * COST_3MF.per_triangle - 1, || {
+                export_3mf(&doc, 0, true, false)
+            }),
+            12,
+        );
+        assert_too_large(
+            with_limit(12 * COST_STL.per_triangle - 1, || {
+                export_stl(&doc, 0, true, false)
+            }),
+            12,
+        );
+    }
+
+    /// The document a 3MF carries is counted on top of its mesh, and a
+    /// selection export is estimated from the selection alone.
+    #[test]
+    fn the_estimate_counts_the_carried_document_and_only_the_selection() {
+        use kernel::memory::with_limit;
+        let doc = box_document();
+        let document = vec![7u8; 1000];
+        let need = 12 * COST_3MF.per_triangle + document.len();
+        assert_too_large(
+            with_limit(need - 1, || {
+                export_3mf_with_document(&doc, 0, false, false, &document)
+            }),
+            12,
+        );
+        with_limit(need, || {
+            export_3mf_with_document(&doc, 0, false, false, &document)
+        })
+        .expect("fits at its estimate");
+
+        let mut two = box_document();
+        let obj_id = two.visible_object_ids()[0];
+        let (component, first, _) = two
+            .make_component(&[kernel::NodeId::Object(obj_id)])
+            .expect("make a component from the box");
+        two.place_instance(
+            component,
+            kernel::Transform::translation(kernel::Vec3::new(2.0, 0.0, 0.0)),
+        )
+        .expect("place a second instance");
+        // Both placements are written, so both are counted.
+        assert_too_large(
+            with_limit(24 * COST_STL.per_triangle - 1, || {
+                export(&two, "stl", 0, true, false)
+            }),
+            24,
+        );
+        let selection = [two
+            .occurrence_at(&[], kernel::NodeId::Instance(first))
+            .map(RenderRoot::Occurrence)
+            .expect("the first placement")];
+        with_limit(12 * COST_STL.per_triangle, || {
+            export_occurrences(&two, &selection, "stl", 0, true, false)
+        })
+        .expect("one placement fits in one placement's room");
     }
 
     // ---------------------------------------------------------------- 3MF

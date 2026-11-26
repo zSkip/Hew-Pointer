@@ -490,6 +490,7 @@ const DESCRIPTIONS: Record<string, MessageDescriptor> = {
   DanglingReference: msg`This file is damaged and can't be opened.`,
   MissingAsset: msg`This file is missing some of its data and can't be opened.`,
   Geometry: msg`This file's geometry data is damaged and can't be opened.`,
+  TooLarge: msg`There isn't enough memory left to open this document. Close other documents and try again.`,
 
   // ----------------------------------------------------- math helpers
   DegenerateVector: msg`That direction is too short to work with. Pick points further apart.`,
@@ -605,12 +606,14 @@ export function parseKernelErrorCode(err: unknown): string | null {
 }
 
 /**
- * App-side refusals thrown as `"<code>: <message>"` whose message is already
- * written for people, naming what only the moment knows (Borpa's filament
- * refusals name the filaments, borpa/filamentRules.ts). Shown as they are.
+ * Refusals thrown as `"<code>: <message>"` whose message is already written
+ * for people, naming what only the moment knows: Borpa's filament refusals
+ * name the filaments (borpa/filamentRules.ts), and a file write that cannot
+ * fit in the kernel's memory (`export_too_large`, from Save, Send to Prepare
+ * and Export) names its triangle count. Shown as they are.
  */
 // oxlint-disable-next-line lingui/no-unlocalized-strings -- error codes, not copy
-export const PLAIN_MESSAGE_CODES: ReadonlySet<string> = new Set(['FilamentMismatch'])
+export const PLAIN_MESSAGE_CODES: ReadonlySet<string> = new Set(['FilamentMismatch', 'export_too_large'])
 
 /**
  * Plain-language copy (what happened + suggested next step) for a kernel

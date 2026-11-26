@@ -11424,6 +11424,10 @@ msgstr "There is nothing in that selection to measure."
 msgid "There is nothing to revert."
 msgstr "There is nothing to revert."
 
+#: src/kernelErrors.ts
+msgid "There isn't enough memory left to open this document. Close other documents and try again."
+msgstr "There isn't enough memory left to open this document. Close other documents and try again."
+
 #: src/borpa/filamentRules.ts
 msgid "These are made of {list}, and an object is printed in one filament, so they can't become one object. Keep them separate, or give them the same filament first."
 msgstr "These are made of {list}, and an object is printed in one filament, so they can't become one object. Keep them separate, or give them the same filament first."

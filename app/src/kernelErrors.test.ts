@@ -415,6 +415,20 @@ describe('friendlyErrorText', () => {
     )
   })
 
+  it('shows the memory refusals of a write and an open in plain words', () => {
+    // A write (Save, Send to Prepare, Export) names its triangle count.
+    const write =
+      "There isn't enough memory left to write this model (5,000,000 triangles). Reduce or split the model and try again."
+    expect(friendlyErrorText(new Error(`export_too_large: ${write}`))).toBe(write)
+    expect(friendlyErrorText(new Error('TooLarge: the document is too large to open in the memory left'))).toBe(
+      "There isn't enough memory left to open this document. Close other documents and try again.",
+    )
+    // An STL import's refusal comes through the STL wrapper, as written.
+    const stl =
+      'This STL has 6,000,000 triangles, more than there is memory left to import. Reduce it in a mesh tool (decimate it) and import it again.'
+    expect(friendlyErrorText(new Error(`STL: ${stl}`))).toBe(stl)
+  })
+
   it('carries copy for the app-side InvalidSelection refusal (structuralSelection boundary)', () => {
     const text = kernelErrorMessage('InvalidSelection', '')
     expect(text).toContain('group or component')
