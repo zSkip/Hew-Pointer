@@ -24,6 +24,14 @@
 mod curves_api;
 mod draft_api;
 mod geo_api;
+#[cfg(target_arch = "wasm32")]
+mod grow_ahead;
+
+/// Grows linear memory in large steps rather than a page per allocation
+/// (see [`grow_ahead`]).
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: grow_ahead::GrowAhead = grow_ahead::GrowAhead;
 mod health;
 mod live;
 mod log;
