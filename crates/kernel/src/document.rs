@@ -6305,7 +6305,7 @@ impl Document {
     ///
     /// [`save`]: Document::save
     pub fn load(bytes: &[u8]) -> Result<Document, LoadError> {
-        let raw = decode_document_raw(bytes)?;
+        let mut raw = decode_document_raw(bytes)?;
 
         let mut doc = Document::new();
         doc.document_id = raw.document_id;
@@ -6330,8 +6330,11 @@ impl Document {
         let obj_count = raw.geom_buffers.len();
         let mut dense_obj_ids: Vec<ObjectId> = Vec::with_capacity(obj_count);
 
-        for (i, buf) in raw.geom_buffers.iter().enumerate() {
-            let mut obj = Object::decode(buf, &dense_to_mat).map_err(LoadError::Geometry)?;
+        // Each geometry buffer is freed once its Object is built.
+        let geom_buffers = std::mem::take(&mut raw.geom_buffers);
+        for (i, buf) in geom_buffers.into_iter().enumerate() {
+            let mut obj = Object::decode(&buf, &dense_to_mat).map_err(LoadError::Geometry)?;
+            drop(buf);
 
             // Patch base material from manifest (the geometry buffer also carries
             // it, but we restore it from the manifest to match exactly).

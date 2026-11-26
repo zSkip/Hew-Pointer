@@ -513,132 +513,16 @@ impl Object {
     /// The public signature/behaviour of [`Object::from_polygons`] is
     /// unchanged; this function is a separate, internal path.
     pub(crate) fn from_faces_with_holes(positions: &[Point3], faces: &[FaceSpec]) -> Object {
-        let mut obj = Object::empty();
-
-        // Insert all vertices.
-        let vertex_ids: Vec<VertexId> = positions
+        let loops = faces.len() + faces.iter().map(|f| f.1.len()).sum::<usize>();
+        let half_edges = faces
             .iter()
-            .map(|&p| {
-                obj.vertices.insert(Vertex {
-                    position: p,
-                    // Will be set below.
-                    outgoing: HalfEdgeId::default(),
-                })
-            })
-            .collect();
-
-        // Directed half-edge map for twin pairing: (origin, dest) -> HalfEdgeId.
-        // BTreeMap (not HashMap) so the twin-pairing iteration below — which
-        // assigns edge ids — is deterministic run-to-run.
-        let mut directed: BTreeMap<(VertexId, VertexId), HalfEdgeId> = BTreeMap::new();
-        let mut all_face_ids: Vec<FaceId> = Vec::new();
-
-        for (outer_indices, hole_index_lists, plane, material, uv_frame, surface, attrs) in faces {
-            // ---- outer loop ----
-            let outer_loop_id = obj.loops.insert(Loop {
-                face: FaceId::default(),
-                first_half_edge: HalfEdgeId::default(),
-                kind: LoopKind::Outer,
-            });
-
-            let face_id = obj.faces.insert(Face::new(
-                outer_loop_id,
-                LoopList::new(),
-                *plane,
-                FaceAttrs {
-                    material: *material,
-                    back_material: None,
-                    uv_frame: *uv_frame,
-                    surface: *surface,
-                    blend: None,
-                    attrs: AttrSlot::NONE,
-                },
-            ));
-            if !attrs.is_empty() {
-                let slot = obj.intern_attrs(attrs.clone());
-                obj.faces[face_id].set_attr_slot(slot);
-            }
-            obj.loops[outer_loop_id].face = face_id;
-            all_face_ids.push(face_id);
-
-            build_loop(
-                &mut obj,
-                &vertex_ids,
-                outer_indices,
-                outer_loop_id,
-                &mut directed,
-            );
-
-            // ---- inner loops (holes) ----
-            for hole_indices in hole_index_lists {
-                let inner_loop_id = obj.loops.insert(Loop {
-                    face: face_id,
-                    first_half_edge: HalfEdgeId::default(),
-                    kind: LoopKind::Inner,
-                });
-                obj.faces[face_id].inner_loops.push(inner_loop_id);
-
-                build_loop(
-                    &mut obj,
-                    &vertex_ids,
-                    hole_indices,
-                    inner_loop_id,
-                    &mut directed,
-                );
-            }
+            .map(|f| f.0.len() + f.1.iter().map(Vec::len).sum::<usize>())
+            .sum();
+        let mut builder = FaceBuilder::new(positions, faces.len(), loops, half_edges);
+        for (outer, holes, plane, material, uv_frame, surface, attrs) in faces {
+            builder.add_face(outer, holes, *plane, *material, *uv_frame, *surface, attrs);
         }
-
-        // Pair twins.
-        for (&(a, b), &h) in &directed {
-            match directed.get(&(b, a)) {
-                Some(&t) => {
-                    if a < b {
-                        let edge = obj.edges.insert(Edge {
-                            half_edge: h,
-                            twin_half_edge: Some(t),
-                            soft: false,
-                            crease: false,
-                            attrs: AttrSlot::NONE,
-                        });
-                        obj.half_edges[h].edge = edge;
-                        obj.half_edges[t].edge = edge;
-                        obj.half_edges[h].twin = Some(t);
-                        obj.half_edges[t].twin = Some(h);
-                    }
-                }
-                None => {
-                    let edge = obj.edges.insert(Edge {
-                        half_edge: h,
-                        twin_half_edge: None,
-                        soft: false,
-                        crease: false,
-                        attrs: AttrSlot::NONE,
-                    });
-                    obj.half_edges[h].edge = edge;
-                }
-            }
-        }
-
-        // Update vertex outgoing pointers to any half-edge originating there.
-        // Iterate the half-edge slotmap in its deterministic insertion order so
-        // a vertex's cached `outgoing` is reproducible run-to-run; a
-        // seed-dependent assignment here previously surfaced as a flaky
-        // split_boundary_edge crash.
-        for (h, he) in obj.half_edges.iter() {
-            obj.vertices[he.origin].outgoing = h;
-        }
-
-        obj.shells.insert(Shell {
-            faces: all_face_ids,
-        });
-
-        obj.watertight = if obj.half_edges.values().all(|he| he.twin.is_some()) {
-            WatertightState::Watertight
-        } else {
-            WatertightState::Open
-        };
-
-        obj
+        builder.finish()
     }
 
     /// Drop any per-edge circle claim ([`crate::topo::EdgeArcs::curve`]) that no
@@ -829,39 +713,224 @@ impl Object {
     }
 }
 
-/// Inserts half-edges for `indices` into `loop_id`, wiring next/prev, and
-/// records (origin, dest) → HalfEdgeId in `directed`.  Edge IDs and twins are
-/// set by the caller after all faces have been processed.
-fn build_loop(
-    obj: &mut Object,
-    vertex_ids: &[VertexId],
-    indices: &[usize],
-    loop_id: crate::ids::LoopId,
-    directed: &mut BTreeMap<(VertexId, VertexId), HalfEdgeId>,
-) {
-    let ids: Vec<VertexId> = indices.iter().map(|&i| vertex_ids[i]).collect();
-    let n = ids.len();
-    let he_ids: Vec<HalfEdgeId> = ids
-        .iter()
-        .map(|&origin| {
-            obj.half_edges.insert(HalfEdge {
-                origin,
-                twin: None,
-                next: HalfEdgeId::default(),
-                prev: HalfEdgeId::default(),
-                edge: EdgeId::default(),
-                loop_id,
+/// Builds an [`Object`] one face at a time: the path behind
+/// [`Object::from_faces_with_holes`], and the file reader's, which adds each
+/// face as it reads it rather than collecting the whole object first.
+/// Insertion order, and so every slot, is that of building from a list:
+/// vertices first, then per face its outer loop, the face, its outer
+/// half-edges, and each hole loop with its half-edges; edges last, in
+/// (origin, dest) vertex-id order.
+pub(crate) struct FaceBuilder {
+    obj: Object,
+    vertex_ids: Vec<VertexId>,
+    /// Every half-edge as (origin, dest) indices into `vertex_ids`, in the
+    /// order inserted; paired into edges by [`FaceBuilder::finish`].
+    directed: Vec<(u32, u32, HalfEdgeId)>,
+    faces: Vec<FaceId>,
+}
+
+impl FaceBuilder {
+    /// A builder over `positions`, with room for `faces` faces, `loops`
+    /// loops and `half_edges` half-edges (capacity only: more fit, by
+    /// growing).
+    pub(crate) fn new(positions: &[Point3], faces: usize, loops: usize, half_edges: usize) -> Self {
+        let mut obj = Object::empty();
+        obj.vertices.reserve(positions.len());
+        obj.faces.reserve(faces);
+        obj.loops.reserve(loops);
+        obj.half_edges.reserve(half_edges);
+        let vertex_ids = positions
+            .iter()
+            .map(|&p| {
+                obj.vertices.insert(Vertex {
+                    position: p,
+                    // Set by `finish`.
+                    outgoing: HalfEdgeId::default(),
+                })
             })
-        })
-        .collect();
-    for k in 0..n {
-        let h = he_ids[k];
-        obj.half_edges[h].next = he_ids[(k + 1) % n];
-        obj.half_edges[h].prev = he_ids[(k + n - 1) % n];
+            .collect();
+        FaceBuilder {
+            obj,
+            vertex_ids,
+            directed: Vec::with_capacity(half_edges),
+            faces: Vec::with_capacity(faces),
+        }
     }
-    obj.loops[loop_id].first_half_edge = he_ids[0];
-    for k in 0..n {
-        directed.insert((ids[k], ids[(k + 1) % n]), he_ids[k]);
+
+    /// The Object being built; its edges do not exist until `finish`.
+    pub(crate) fn object_mut(&mut self) -> &mut Object {
+        &mut self.obj
+    }
+
+    /// Adds one face: `outer` and each of `holes` index `positions`, with
+    /// the winding [`Object::from_faces_with_holes`] asks for (not checked).
+    /// `attrs` is the face's dictionary (empty = none).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn add_face(
+        &mut self,
+        outer: &[usize],
+        holes: &[Vec<usize>],
+        plane: Plane,
+        material: FaceMaterial,
+        uv_frame: Option<UvFrame>,
+        surface: Option<SurfaceRef>,
+        attrs: &AttrDict,
+    ) -> FaceId {
+        let outer_loop_id = self.obj.loops.insert(Loop {
+            face: FaceId::default(),
+            first_half_edge: HalfEdgeId::default(),
+            kind: LoopKind::Outer,
+        });
+        let face_id = self.obj.faces.insert(Face::new(
+            outer_loop_id,
+            LoopList::new(),
+            plane,
+            FaceAttrs {
+                material,
+                back_material: None,
+                uv_frame,
+                surface,
+                blend: None,
+                attrs: AttrSlot::NONE,
+            },
+        ));
+        if !attrs.is_empty() {
+            let slot = self.obj.intern_attrs(attrs.clone());
+            self.obj.faces[face_id].set_attr_slot(slot);
+        }
+        self.obj.loops[outer_loop_id].face = face_id;
+        self.faces.push(face_id);
+        self.add_loop(outer, outer_loop_id);
+        for hole in holes {
+            let inner_loop_id = self.obj.loops.insert(Loop {
+                face: face_id,
+                first_half_edge: HalfEdgeId::default(),
+                kind: LoopKind::Inner,
+            });
+            self.obj.faces[face_id].inner_loops.push(inner_loop_id);
+            self.add_loop(hole, inner_loop_id);
+        }
+        face_id
+    }
+
+    /// Inserts half-edges for `indices` into `loop_id`, wiring next/prev,
+    /// and records each one's (origin, dest) for `finish`.
+    fn add_loop(&mut self, indices: &[usize], loop_id: crate::ids::LoopId) {
+        let n = indices.len();
+        let he_ids: Vec<HalfEdgeId> = indices
+            .iter()
+            .map(|&i| {
+                self.obj.half_edges.insert(HalfEdge {
+                    origin: self.vertex_ids[i],
+                    twin: None,
+                    next: HalfEdgeId::default(),
+                    prev: HalfEdgeId::default(),
+                    edge: EdgeId::default(),
+                    loop_id,
+                })
+            })
+            .collect();
+        for k in 0..n {
+            let h = he_ids[k];
+            self.obj.half_edges[h].next = he_ids[(k + 1) % n];
+            self.obj.half_edges[h].prev = he_ids[(k + n - 1) % n];
+            self.directed
+                .push((indices[k] as u32, indices[(k + 1) % n] as u32, h));
+        }
+        self.obj.loops[loop_id].first_half_edge = he_ids[0];
+    }
+
+    /// Pairs twins into edges, sets each vertex's outgoing half-edge, and
+    /// puts every face in one shell.
+    pub(crate) fn finish(self) -> Object {
+        let FaceBuilder {
+            mut obj,
+            vertex_ids,
+            mut directed,
+            faces,
+        } = self;
+        let key =
+            |&(a, b, _): &(u32, u32, HalfEdgeId)| (vertex_ids[a as usize], vertex_ids[b as usize]);
+        // Sorted by (origin, dest) vertex id, and a pair given twice keeps
+        // its last half-edge, as a map keyed by the pair would. A new table
+        // only inserts, so half-edge ids grow in insertion order: ordering
+        // ties by id puts the last one last without a stable sort's scratch
+        // buffer.
+        directed.sort_unstable_by(|x, y| key(x).cmp(&key(y)).then_with(|| x.2.cmp(&y.2)));
+        directed.dedup_by(|later, kept| {
+            if key(later) == key(kept) {
+                kept.2 = later.2;
+                true
+            } else {
+                false
+            }
+        });
+        let twin_of = |a: u32, b: u32| -> Option<HalfEdgeId> {
+            let want = (vertex_ids[b as usize], vertex_ids[a as usize]);
+            directed
+                .binary_search_by(|e| key(e).cmp(&want))
+                .ok()
+                .map(|i| directed[i].2)
+        };
+        // One edge per unordered pair: a twinned pair counts once.
+        obj.edges.reserve(
+            directed
+                .iter()
+                .filter(|&&(a, b, _)| {
+                    vertex_ids[a as usize] < vertex_ids[b as usize] || twin_of(a, b).is_none()
+                })
+                .count(),
+        );
+        for &(a, b, h) in &directed {
+            match twin_of(a, b) {
+                Some(t) => {
+                    // Each unordered pair is processed once.
+                    if vertex_ids[a as usize] < vertex_ids[b as usize] {
+                        let edge = obj.edges.insert(Edge {
+                            half_edge: h,
+                            twin_half_edge: Some(t),
+                            soft: false,
+                            crease: false,
+                            attrs: AttrSlot::NONE,
+                        });
+                        obj.half_edges[h].edge = edge;
+                        obj.half_edges[t].edge = edge;
+                        obj.half_edges[h].twin = Some(t);
+                        obj.half_edges[t].twin = Some(h);
+                    }
+                }
+                None => {
+                    let edge = obj.edges.insert(Edge {
+                        half_edge: h,
+                        twin_half_edge: None,
+                        soft: false,
+                        crease: false,
+                        attrs: AttrSlot::NONE,
+                    });
+                    obj.half_edges[h].edge = edge;
+                }
+            }
+        }
+        drop(directed);
+
+        // Update vertex outgoing pointers to any half-edge originating there.
+        // Iterate the half-edge slotmap in its deterministic insertion order so
+        // a vertex's cached `outgoing` is reproducible run-to-run; a
+        // seed-dependent assignment here previously surfaced as a flaky
+        // split_boundary_edge crash.
+        for (h, he) in obj.half_edges.iter() {
+            obj.vertices[he.origin].outgoing = h;
+        }
+
+        obj.shells.insert(Shell { faces });
+
+        obj.watertight = if obj.half_edges.values().all(|he| he.twin.is_some()) {
+            WatertightState::Watertight
+        } else {
+            WatertightState::Open
+        };
+
+        obj
     }
 }
 
@@ -1067,6 +1136,45 @@ impl Object {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A directed edge given twice (two faces wound the same way along it)
+    /// keeps its last half-edge for twin pairing, as the map keyed by the
+    /// pair it replaced did; the earlier one is left unpaired.
+    #[test]
+    fn a_directed_edge_given_twice_pairs_its_last_half_edge() {
+        let positions = vec![
+            Point3::new(0.0, 0.0, 0.0),
+            Point3::new(1.0, 0.0, 0.0),
+            Point3::new(0.0, 1.0, 0.0),
+            Point3::new(0.0, -1.0, 0.0),
+            Point3::new(0.0, 0.0, 1.0),
+        ];
+        let flat = Plane::from_polygon(&[positions[0], positions[1], positions[2]]).unwrap();
+        let face = |outer: Vec<usize>| -> FaceSpec {
+            (outer, Vec::new(), flat, None, None, None, AttrDict::new())
+        };
+        // 0→1 is given by the first and the third face; 1→0 by the second.
+        let faces = vec![
+            face(vec![0, 1, 2]),
+            face(vec![1, 0, 3]),
+            face(vec![0, 1, 4]),
+        ];
+        let obj = Object::from_faces_with_holes(&positions, &faces);
+        let from = |f: usize| {
+            let fid = obj.faces.keys().nth(f).unwrap();
+            obj.loop_half_edges(obj.faces[fid].outer_loop)
+                .next()
+                .unwrap()
+        };
+        let (first, back, last) = (from(0), from(1), from(2));
+        assert_eq!(obj.half_edges[last].twin, Some(back));
+        assert_eq!(obj.half_edges[back].twin, Some(last));
+        assert_eq!(obj.half_edges[first].twin, None);
+        assert_eq!(obj.half_edges[first].edge, EdgeId::default());
+        assert_eq!(obj.edges[obj.half_edges[last].edge].half_edge, last);
+        // 0→1/1→0 once, plus each face's two other (unpaired) sides.
+        assert_eq!(obj.edges.len(), 1 + 3 * 2);
+    }
 
     fn unit_box() -> (Vec<Point3>, Vec<Vec<usize>>) {
         let positions = vec![

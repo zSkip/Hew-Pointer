@@ -414,6 +414,20 @@ fn crease_and_blend_tampering_is_rejected() {
     assert_eq!(corrupt(&b), "blend flag must be 0 or 1");
 }
 
+/// A face that writes no crease block states "no crease" for each of its
+/// edges, so beside a neighbour that creases their shared edge the two
+/// disagree: the reader refuses it, whichever faces carry blocks.
+#[test]
+fn a_face_without_a_crease_block_disagrees_with_a_creased_neighbour() {
+    let clean = encode(&tagged_creased_box());
+    let (_, faces) = walk(&clean);
+    let f = faces.iter().find(|f| clean[f.crease] == 1).unwrap();
+    let mut b = clean[..f.crease].to_vec();
+    b.push(0);
+    b.extend_from_slice(&clean[f.blend..]);
+    assert_eq!(corrupt(&b), "shared edge has disagreeing crease flags");
+}
+
 #[test]
 fn crease_with_soft_fails_validation() {
     // A creased wall seam whose soft flag a tampered file turns on: the

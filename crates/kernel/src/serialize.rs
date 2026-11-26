@@ -700,6 +700,119 @@ fn attr_dict_json(dict: &crate::attr::AttrDict) -> Vec<u8> {
 /// namespace and key non-empty, every namespace holding a key, every value
 /// representable ([`crate::attr::AttrValue::from_json`]). A present entry
 /// with no namespace is malformed (the writer never emits one).
+/// The loops and half-edges of the `face_count` face records of a geometry
+/// buffer of `version` that start at `pos`: a walk over the records that
+/// reads only their sizes, so the reader can size its tables exactly before
+/// building. `None` when the records do not fit the buffer or carry a flag
+/// out of range; the reader's own checks then report the fault.
+fn face_table_sizes(
+    data: &[u8],
+    pos: usize,
+    version: u32,
+    face_count: usize,
+) -> Option<(usize, usize)> {
+    struct Walk<'a> {
+        data: &'a [u8],
+        pos: usize,
+    }
+    impl Walk<'_> {
+        fn skip(&mut self, n: usize) -> Option<usize> {
+            let start = self.pos;
+            self.pos = start.checked_add(n).filter(|&end| end <= self.data.len())?;
+            Some(start)
+        }
+        fn u8(&mut self) -> Option<u8> {
+            self.skip(1).map(|at| self.data[at])
+        }
+        fn u32(&mut self) -> Option<usize> {
+            let at = self.skip(4)?;
+            let b: [u8; 4] = self.data[at..at + 4].try_into().ok()?;
+            Some(u32::from_le_bytes(b) as usize)
+        }
+        /// A flag that is 0, or 1 followed by `payload` bytes.
+        fn flagged(&mut self, payload: usize) -> Option<()> {
+            match self.u8()? {
+                0 => Some(()),
+                1 => self.skip(payload).map(|_| ()),
+                _ => None,
+            }
+        }
+        /// A dictionary: a flag, and when 1 a u32 length and the bytes.
+        fn dict(&mut self) -> Option<()> {
+            match self.u8()? {
+                0 => Some(()),
+                1 => {
+                    let len = self.u32()?;
+                    self.skip(len).map(|_| ())
+                }
+                _ => None,
+            }
+        }
+        /// A per-edge block: an "any" flag, and when 1 an entry per edge.
+        fn per_edge(&mut self, edges: usize, entry: fn(&mut Self) -> Option<()>) -> Option<()> {
+            match self.u8()? {
+                0 => Some(()),
+                1 => (0..edges).try_for_each(|_| entry(self)),
+                _ => None,
+            }
+        }
+    }
+    let mut w = Walk { data, pos };
+    let (mut loops, mut half_edges) = (0usize, 0usize);
+    for _ in 0..face_count {
+        w.skip(4)?; // material
+        if version >= 2 {
+            w.flagged(64)?; // UV frame
+        }
+        if version >= 4 {
+            match w.u8()? {
+                0 => {}
+                1 => {
+                    w.skip(56)?;
+                }
+                kind if version >= CURVES_GEOMETRY_VERSION => {
+                    w.skip(8 * surface_payload_len(kind)?)?;
+                }
+                _ => return None,
+            }
+        }
+        let mut edges = w.u32()?;
+        w.skip(edges.checked_mul(4)?)?;
+        let holes = w.u32()?;
+        for _ in 0..holes {
+            let n = w.u32()?;
+            w.skip(n.checked_mul(4)?)?;
+            edges = edges.checked_add(n)?;
+        }
+        loops = loops.checked_add(1 + holes)?;
+        half_edges = half_edges.checked_add(edges)?;
+        if version >= FACE_PLANE_GEOMETRY_VERSION {
+            w.flagged(32)?; // stored plane
+        }
+        if version >= 6 {
+            w.flagged(edges)?; // SOFT flags
+        }
+        if version >= 5 {
+            w.per_edge(edges, |w| w.flagged(32))?; // circle claims
+        }
+        if version >= 7 {
+            w.per_edge(edges, |w| w.flagged(32))?; // polygon claims
+        }
+        if version >= 8 {
+            w.flagged(4)?; // back paint
+        }
+        if version >= ELEMENT_ATTRS_GEOMETRY_VERSION {
+            w.dict()?;
+            w.per_edge(edges, Walk::dict)?;
+        }
+        if version >= CURVES_GEOMETRY_VERSION {
+            w.flagged(edges)?; // CREASE flags
+            w.flagged(6)?; // blend tag
+        }
+    }
+    Some((loops, half_edges))
+}
+
 fn read_attr_dict(r: &mut ByteReader<'_>) -> Result<Option<crate::attr::AttrDict>, DecodeError> {
     match r.read_u8()? {
         0 => return Ok(None),
@@ -1450,79 +1563,156 @@ impl Object {
         // by first appearance in that face walk. Positions are compared by
         // `total_cmp` (bit-exact), which is sound because the kernel itself
         // is bit-for-bit deterministic (DEVELOPMENT.md §7).
-        let ring_positions = |hes: &[crate::ids::HalfEdgeId]| -> Vec<Point3> {
-            hes.iter()
-                .map(|&h| self.vertices[self.half_edges[h].origin].position)
-                .collect()
-        };
-        let canonical_loop =
-            |loop_id: crate::ids::LoopId| -> (Vec<crate::ids::VertexId>, Vec<Point3>) {
-                let hes: Vec<crate::ids::HalfEdgeId> = self.loop_half_edges(loop_id).collect();
-                let ring = ring_positions(&hes);
-                let start = canonical_rotation(&ring);
-                let n = hes.len();
-                let verts = (0..n)
-                    .map(|k| self.half_edges[hes[(start + k) % n]].origin)
-                    .collect();
-                let ring = (0..n).map(|k| ring[(start + k) % n]).collect();
-                (verts, ring)
-            };
+        use crate::ids::{FaceId, HalfEdgeId, LoopId, VertexId};
+        use crate::sketch::CurveGeom;
+        use std::cmp::Ordering;
 
+        let pos = |v: VertexId| self.vertices[v].position;
+        // A loop's vertices from its canonical start, and their positions.
+        let canonical_loop = |loop_id: LoopId| -> (Vec<VertexId>, Vec<Point3>) {
+            let hes: Vec<HalfEdgeId> = self.loop_half_edges(loop_id).collect();
+            let ring: Vec<Point3> = hes
+                .iter()
+                .map(|&h| pos(self.half_edges[h].origin))
+                .collect();
+            let start = canonical_rotation(&ring);
+            let n = hes.len();
+            let verts = (0..n)
+                .map(|k| self.half_edges[hes[(start + k) % n]].origin)
+                .collect();
+            let ring = (0..n).map(|k| ring[(start + k) % n]).collect();
+            (verts, ring)
+        };
+        // [`ring_cmp`] over the positions of two vertex sequences.
+        let ring_ids_cmp = |a: &[VertexId], b: &[VertexId]| -> Ordering {
+            for (&p, &q) in a.iter().zip(b) {
+                let c = pos_cmp(pos(p), pos(q));
+                if c != Ordering::Equal {
+                    return c;
+                }
+            }
+            a.len().cmp(&b.len())
+        };
+
+        // One face in canonical form, kept small: a dense mesh has one per
+        // triangle, all alive at once. The canonical vertex rings live in
+        // `loop_verts`; everything the face itself holds (UV frame, surface
+        // claim, blend tag, dictionary) and the per-edge payloads are read
+        // from the Object when needed, which is only when two faces tie on
+        // everything before them in the sort key, and when written.
         struct CanonicalFace {
-            outer_verts: Vec<crate::ids::VertexId>,
-            outer_ring: Vec<Point3>,
-            holes: Vec<(Vec<crate::ids::VertexId>, Vec<Point3>)>,
+            fid: FaceId,
+            /// The outer ring from its canonical start: `loop_verts[start..start + len]`.
+            outer: (u32, u32),
+            /// The hole rings sorted by [`ring_cmp`]: the loop and its ring
+            /// in `loop_verts`.
+            holes: Box<[(LoopId, u32, u32)]>,
             mat_id: u32,
             /// The back paint (v8), `NO_MATERIAL` for none. Emitted per
             /// face, so it participates in the sort key.
             back_mat_id: u32,
-            uv_frame: Option<UvFrame>,
-            /// Analytic surface claim (v4) — emitted per face, so it also
-            /// participates in the sort key below.
-            surface: Option<crate::topo::SurfaceRef>,
-            /// Per-outer-edge circle claims (v5) in canonical vertex order:
-            /// entry `k` is the claim on the loop edge originating at
-            /// `outer_verts[k]`. Emitted per face, so it participates in the key.
-            outer_curves: Vec<Option<crate::sketch::CurveGeom>>,
-            /// Per-hole-edge circle claims (v5), one list per hole in the
-            /// same sorted order as `holes`.
-            hole_curves: Vec<Vec<Option<crate::sketch::CurveGeom>>>,
-            /// Per-outer-edge polygon claims (v7), canonical order as
-            /// `outer_curves`. Participates in the sort key.
-            outer_polys: Vec<Option<crate::sketch::CurveGeom>>,
-            /// Per-hole-edge polygon claims (v7), paired like `hole_curves`.
-            hole_polys: Vec<Vec<Option<crate::sketch::CurveGeom>>>,
-            /// Per-outer-edge SOFT flags (v6), canonical order as
-            /// `outer_curves`. Participates in the sort key.
-            outer_soft: Vec<bool>,
-            /// Per-hole-edge SOFT flags (v6), paired like `hole_curves`.
-            hole_soft: Vec<Vec<bool>>,
-            /// The face's attribute dictionary as its emitted JSON bytes
-            /// (v9), `None` for none. Participates in the sort key.
-            attrs: Option<Vec<u8>>,
-            /// Per-outer-edge dictionaries (v9) as emitted JSON, canonical
-            /// order as `outer_curves`. Participates in the sort key.
-            outer_attrs: Vec<Option<Vec<u8>>>,
-            /// Per-hole-edge dictionaries (v9), paired like `hole_curves`.
-            hole_attrs: Vec<Vec<Option<Vec<u8>>>>,
-            /// Per-outer-edge CREASE flags (v10), canonical order as
-            /// `outer_soft`. Participates in the sort key (appended last).
-            outer_crease: Vec<bool>,
-            /// Per-hole-edge CREASE flags (v10), paired like `hole_soft`.
-            hole_crease: Vec<Vec<bool>>,
-            /// The blend tag (v10). Participates in the sort key (last).
-            blend: Option<crate::topo::BlendTag>,
+            /// The face's analytic-surface claim is left out of the file
+            /// (the reader would refuse it; see below).
+            drop_surface: bool,
+            /// Some edge of the face may carry a per-edge payload (circle or
+            /// polygon claim, SOFT or CREASE flag, dictionary). When false,
+            /// every per-edge block is absent.
+            edge_payloads: bool,
             /// The face's plane when it is stored (v11): `None` when the
             /// loader's refit from the outer ring gives it bit for bit, and
-            /// always `None` below v11. Participates in the sort key (after
-            /// the v10 payloads).
-            plane: Option<Plane>,
+            /// always `None` below v11. Boxed: almost every face has none.
+            plane: Option<Box<Plane>>,
             /// Ordinal of the owning connected component (derived from twin
             /// adjacency, NOT the stored shell list, which may lump
             /// disconnected components together); replaced by the
             /// component's canonical RANK before the face sort below.
-            shell: usize,
+            shell: u32,
         }
+        let mut loop_verts: Vec<VertexId> = Vec::with_capacity(self.half_edges.len());
+        let ring_of = |(start, len): (u32, u32)| -> std::ops::Range<usize> {
+            start as usize..start as usize + len as usize
+        };
+
+        // A loop's per-edge payloads in CANONICAL vertex order: entry `k` is
+        // the loop edge originating at `verts[k]` (the first such half-edge
+        // in loop order). Keyed off the canonical vertex order (a rotation
+        // of the raw loop) rather than raw half-edge/slot order, so the bytes
+        // stay stable across undo/redo slot reallocation — the whole point
+        // of the canonical writer. Decode re-attaches by the same rule (edge
+        // `k` originates at stored vertex `k`).
+        struct EdgeBlocks {
+            /// Circle claims (v5).
+            curves: Vec<Option<CurveGeom>>,
+            /// SOFT flags (v6).
+            soft: Vec<bool>,
+            /// Polygon claims (v7).
+            polys: Vec<Option<CurveGeom>>,
+            /// Dictionaries (v9) as emitted JSON.
+            attrs: Vec<Option<Vec<u8>>>,
+            /// CREASE flags (v10).
+            crease: Vec<bool>,
+        }
+        let loop_edges = |loop_id: LoopId, verts: &[VertexId]| -> EdgeBlocks {
+            let edges: Vec<Option<crate::ids::EdgeId>> = verts
+                .iter()
+                .map(|&v| {
+                    self.loop_half_edges(loop_id)
+                        .find(|&h| self.half_edges[h].origin == v)
+                        .map(|h| self.half_edges[h].edge)
+                })
+                .collect();
+            EdgeBlocks {
+                curves: edges
+                    .iter()
+                    .map(|e| e.and_then(|e| self.edge_curve(e)))
+                    .collect(),
+                soft: edges
+                    .iter()
+                    .map(|e| e.is_some_and(|e| self.edges[e].soft))
+                    .collect(),
+                polys: edges
+                    .iter()
+                    .map(|e| e.and_then(|e| self.edge_polygon(e)))
+                    .collect(),
+                attrs: edges
+                    .iter()
+                    .map(|e| {
+                        e.and_then(|e| self.attr_dict(self.edges[e].attrs))
+                            .map(attr_dict_json)
+                    })
+                    .collect(),
+                crease: edges
+                    .iter()
+                    .map(|e| e.is_some_and(|e| self.edges[e].crease))
+                    .collect(),
+            }
+        };
+        // A face's per-edge payloads: its outer loop, then each hole in
+        // sorted order.
+        let face_edges =
+            |loop_verts: &[VertexId], cf: &CanonicalFace| -> (EdgeBlocks, Vec<EdgeBlocks>) {
+                let outer = loop_edges(
+                    self.faces[cf.fid].outer_loop,
+                    &loop_verts[ring_of(cf.outer)],
+                );
+                let holes = cf
+                    .holes
+                    .iter()
+                    .map(|&(il, start, len)| loop_edges(il, &loop_verts[ring_of((start, len))]))
+                    .collect();
+                (outer, holes)
+            };
+        let face_dict = |cf: &CanonicalFace| -> Option<Vec<u8>> {
+            self.attr_dict(self.faces[cf.fid].attr_slot())
+                .map(attr_dict_json)
+        };
+        let face_surface = |cf: &CanonicalFace| -> Option<crate::topo::SurfaceRef> {
+            if cf.drop_surface {
+                None
+            } else {
+                self.faces[cf.fid].surface()
+            }
+        };
 
         // Ordering over an analytic surface claim (present sorts after absent,
         // then by the wire kind byte, then the payload f64s in wire order) —
@@ -1531,11 +1721,11 @@ impl Object {
         fn surface_cmp(
             a: &Option<crate::topo::SurfaceRef>,
             b: &Option<crate::topo::SurfaceRef>,
-        ) -> std::cmp::Ordering {
+        ) -> Ordering {
             match (a, b) {
-                (None, None) => std::cmp::Ordering::Equal,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (Some(_), None) => std::cmp::Ordering::Greater,
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
                 (Some(sa), Some(sb)) => {
                     let (ka, pa) = surface_wire(sa);
                     let (kb, pb) = surface_wire(sb);
@@ -1543,8 +1733,8 @@ impl Object {
                         pa.iter()
                             .zip(&pb)
                             .map(|(x, y)| x.total_cmp(y))
-                            .find(|o| *o != std::cmp::Ordering::Equal)
-                            .unwrap_or(std::cmp::Ordering::Equal)
+                            .find(|o| *o != Ordering::Equal)
+                            .unwrap_or(Ordering::Equal)
                     })
                 }
             }
@@ -1553,7 +1743,7 @@ impl Object {
         fn blend_cmp(
             a: &Option<crate::topo::BlendTag>,
             b: &Option<crate::topo::BlendTag>,
-        ) -> std::cmp::Ordering {
+        ) -> Ordering {
             let key = |t: &Option<crate::topo::BlendTag>| {
                 t.map(|t| (t.id.0, blend_kind_wire(t.kind), blend_role_wire(t.role)))
             };
@@ -1561,45 +1751,68 @@ impl Object {
         }
         // Ordering over a per-edge circle-claim sequence: length, then each
         // entry (present sorts after absent, then center xyz, radius).
-        fn curve_seq_cmp(
-            a: &[Option<crate::sketch::CurveGeom>],
-            b: &[Option<crate::sketch::CurveGeom>],
-        ) -> std::cmp::Ordering {
+        fn curve_seq_cmp(a: &[Option<CurveGeom>], b: &[Option<CurveGeom>]) -> Ordering {
             a.len().cmp(&b.len()).then_with(|| {
                 for (ca, cb) in a.iter().zip(b) {
                     let c = match (ca, cb) {
-                        (None, None) => std::cmp::Ordering::Equal,
-                        (None, Some(_)) => std::cmp::Ordering::Less,
-                        (Some(_), None) => std::cmp::Ordering::Greater,
+                        (None, None) => Ordering::Equal,
+                        (None, Some(_)) => Ordering::Less,
+                        (Some(_), None) => Ordering::Greater,
                         (Some(ga), Some(gb)) => [ga.center.x, ga.center.y, ga.center.z, ga.radius]
                             .iter()
                             .zip([gb.center.x, gb.center.y, gb.center.z, gb.radius])
                             .map(|(x, y)| x.total_cmp(&y))
-                            .find(|o| *o != std::cmp::Ordering::Equal)
-                            .unwrap_or(std::cmp::Ordering::Equal),
+                            .find(|o| *o != Ordering::Equal)
+                            .unwrap_or(Ordering::Equal),
                     };
-                    if c != std::cmp::Ordering::Equal {
+                    if c != Ordering::Equal {
                         return c;
                     }
                 }
-                std::cmp::Ordering::Equal
+                Ordering::Equal
             })
+        }
+        fn plane_cmp(a: &Option<Box<Plane>>, b: &Option<Box<Plane>>) -> Ordering {
+            let key = |p: &Plane| {
+                let n = p.normal();
+                [n.x, n.y, n.z, p.offset()]
+            };
+            match (a, b) {
+                (None, None) => Ordering::Equal,
+                (None, Some(_)) => Ordering::Less,
+                (Some(_), None) => Ordering::Greater,
+                (Some(pa), Some(pb)) => key(pa)
+                    .iter()
+                    .zip(key(pb))
+                    .map(|(x, y)| x.total_cmp(&y))
+                    .find(|o| *o != Ordering::Equal)
+                    .unwrap_or(Ordering::Equal),
+            }
         }
         // The full per-face key: every payload the record emits participates
         // (ring, holes, material, UV frame, analytic surface, edge-curve
         // claims), so two faces compare Equal only when their emitted bytes
-        // would be identical.
-        fn face_key_cmp(a: &CanonicalFace, b: &CanonicalFace) -> std::cmp::Ordering {
-            ring_cmp(&a.outer_ring, &b.outer_ring)
+        // would be identical. The per-edge payloads, the dictionaries, the
+        // blend tag and the plane are looked up only when everything before
+        // them ties (coincident faces).
+        let face_key_cmp = |loop_verts: &[VertexId],
+                            a: &CanonicalFace,
+                            b: &CanonicalFace|
+         -> Ordering {
+            let (fa, fb) = (&self.faces[a.fid], &self.faces[b.fid]);
+            ring_ids_cmp(&loop_verts[ring_of(a.outer)], &loop_verts[ring_of(b.outer)])
                 .then_with(|| a.holes.len().cmp(&b.holes.len()))
                 .then_with(|| {
-                    for (ha, hb) in a.holes.iter().zip(&b.holes) {
-                        let c = ring_cmp(&ha.1, &hb.1);
-                        if c != std::cmp::Ordering::Equal {
+                    for (&(_, sa, la), &(_, sb, lb)) in a.holes.iter().zip(b.holes.iter()) {
+                        let c = ring_ids_cmp(
+                            &loop_verts[ring_of((sa, la))],
+                            &loop_verts[ring_of((sb, lb))],
+                        );
+                        if c != Ordering::Equal {
                             return c;
                         }
                     }
-                    std::cmp::Ordering::Equal
+                    Ordering::Equal
                 })
                 .then_with(|| a.mat_id.cmp(&b.mat_id))
                 .then_with(|| a.back_mat_id.cmp(&b.back_mat_id))
@@ -1609,83 +1822,76 @@ impl Object {
                 // distinguishing payloads, and leaving any out of the key
                 // would let such faces fall back to slot order — the drift
                 // class this canonical order exists to remove.
-                .then_with(|| uv_frame_cmp(&a.uv_frame, &b.uv_frame))
-                .then_with(|| surface_cmp(&a.surface, &b.surface))
-                .then_with(|| curve_seq_cmp(&a.outer_curves, &b.outer_curves))
-                .then_with(|| a.outer_soft.cmp(&b.outer_soft))
-                .then_with(|| a.hole_soft.cmp(&b.hole_soft))
+                .then_with(|| uv_frame_cmp(&fa.uv_frame(), &fb.uv_frame()))
+                .then_with(|| surface_cmp(&face_surface(a), &face_surface(b)))
                 .then_with(|| {
-                    for (ha, hb) in a.hole_curves.iter().zip(&b.hole_curves) {
-                        let c = curve_seq_cmp(ha, hb);
-                        if c != std::cmp::Ordering::Equal {
-                            return c;
-                        }
-                    }
-                    std::cmp::Ordering::Equal
+                    let (oa, ha) = face_edges(loop_verts, a);
+                    let (ob, hb) = face_edges(loop_verts, b);
+                    curve_seq_cmp(&oa.curves, &ob.curves)
+                        .then_with(|| oa.soft.cmp(&ob.soft))
+                        .then_with(|| ha.iter().map(|h| &h.soft).cmp(hb.iter().map(|h| &h.soft)))
+                        .then_with(|| {
+                            for (x, y) in ha.iter().zip(&hb) {
+                                let c = curve_seq_cmp(&x.curves, &y.curves);
+                                if c != Ordering::Equal {
+                                    return c;
+                                }
+                            }
+                            Ordering::Equal
+                        })
+                        .then_with(|| curve_seq_cmp(&oa.polys, &ob.polys))
+                        .then_with(|| {
+                            for (x, y) in ha.iter().zip(&hb) {
+                                let c = curve_seq_cmp(&x.polys, &y.polys);
+                                if c != Ordering::Equal {
+                                    return c;
+                                }
+                            }
+                            Ordering::Equal
+                        })
+                        // Dictionaries (v9): the face's bytes, then its edges'
+                        // byte sequences (absent sorts before present, present
+                        // compares lexicographically).
+                        .then_with(|| face_dict(a).cmp(&face_dict(b)))
+                        .then_with(|| oa.attrs.cmp(&ob.attrs))
+                        .then_with(|| ha.iter().map(|h| &h.attrs).cmp(hb.iter().map(|h| &h.attrs)))
+                        // v10 payloads, appended at the END of the key so every v9
+                        // buffer sorts exactly as it did.
+                        .then_with(|| oa.crease.cmp(&ob.crease))
+                        .then_with(|| {
+                            ha.iter()
+                                .map(|h| &h.crease)
+                                .cmp(hb.iter().map(|h| &h.crease))
+                        })
                 })
-                .then_with(|| curve_seq_cmp(&a.outer_polys, &b.outer_polys))
-                .then_with(|| {
-                    for (ha, hb) in a.hole_polys.iter().zip(&b.hole_polys) {
-                        let c = curve_seq_cmp(ha, hb);
-                        if c != std::cmp::Ordering::Equal {
-                            return c;
-                        }
-                    }
-                    std::cmp::Ordering::Equal
-                })
-                // Dictionaries (v9): the face's bytes, then its edges'
-                // byte sequences (absent sorts before present, present
-                // compares lexicographically).
-                .then_with(|| a.attrs.cmp(&b.attrs))
-                .then_with(|| a.outer_attrs.cmp(&b.outer_attrs))
-                .then_with(|| a.hole_attrs.cmp(&b.hole_attrs))
-                // v10 payloads, appended at the END of the key so every v9
-                // buffer sorts exactly as it did.
-                .then_with(|| a.outer_crease.cmp(&b.outer_crease))
-                .then_with(|| a.hole_crease.cmp(&b.hole_crease))
-                .then_with(|| blend_cmp(&a.blend, &b.blend))
+                .then_with(|| blend_cmp(&fa.blend(), &fb.blend()))
                 // The stored plane (v11): omitted before stored, stored by
                 // normal then offset. Last, so below v11 (always omitted)
                 // the order is the v10 order.
                 .then_with(|| plane_cmp(&a.plane, &b.plane))
-        }
-        fn plane_cmp(a: &Option<Plane>, b: &Option<Plane>) -> std::cmp::Ordering {
-            let key = |p: &Plane| {
-                let n = p.normal();
-                [n.x, n.y, n.z, p.offset()]
-            };
-            match (a, b) {
-                (None, None) => std::cmp::Ordering::Equal,
-                (None, Some(_)) => std::cmp::Ordering::Less,
-                (Some(_), None) => std::cmp::Ordering::Greater,
-                (Some(pa), Some(pb)) => key(pa)
-                    .iter()
-                    .zip(key(pb))
-                    .map(|(x, y)| x.total_cmp(&y))
-                    .find(|o| *o != std::cmp::Ordering::Equal)
-                    .unwrap_or(std::cmp::Ordering::Equal),
-            }
-        }
+        };
 
-        // Connected components over faces, via twin adjacency (union-find).
-        // Content-derived on purpose: the stored shell list is bookkeeping
-        // that can hold several disconnected components in one shell (a
-        // freshly decoded object does), and the tie-break below needs the
-        // actual geometric grouping.
-        let component_ordinal: SecondaryMap<crate::ids::FaceId, usize> = {
-            let face_ids: Vec<crate::ids::FaceId> = self.faces.keys().collect();
-            let index_of: SecondaryMap<crate::ids::FaceId, usize> =
-                face_ids.iter().enumerate().map(|(i, &f)| (f, i)).collect();
-            let mut parent: Vec<usize> = (0..face_ids.len()).collect();
-            fn find(parent: &mut [usize], x: usize) -> usize {
+        // Connected components over faces, via twin adjacency (union-find),
+        // as ordinals in face-iteration order. Content-derived on purpose:
+        // the stored shell list is bookkeeping that can hold several
+        // disconnected components in one shell (a freshly decoded object
+        // does), and the tie-break below needs the actual geometric grouping.
+        let (component_ordinal, component_count): (Vec<u32>, usize) = {
+            let mut index_of: SecondaryMap<FaceId, u32> =
+                SecondaryMap::with_capacity(self.faces.len());
+            for (i, f) in self.faces.keys().enumerate() {
+                index_of.insert(f, i as u32);
+            }
+            let mut parent: Vec<u32> = (0..self.faces.len() as u32).collect();
+            fn find(parent: &mut [u32], x: u32) -> u32 {
                 let mut root = x;
-                while parent[root] != root {
-                    root = parent[root];
+                while parent[root as usize] != root {
+                    root = parent[root as usize];
                 }
                 let mut cur = x;
-                while parent[cur] != root {
-                    let next = parent[cur];
-                    parent[cur] = root;
+                while parent[cur as usize] != root {
+                    let next = parent[cur as usize];
+                    parent[cur as usize] = root;
                     cur = next;
                 }
                 root
@@ -1696,94 +1902,25 @@ impl Object {
                     let fb = index_of[self.loops[self.half_edges[t].loop_id].face];
                     let (ra, rb) = (find(&mut parent, fa), find(&mut parent, fb));
                     if ra != rb {
-                        parent[ra] = rb;
+                        parent[ra as usize] = rb;
                     }
                 }
             }
-            // Compress roots to dense ordinals in face-iteration order.
-            let mut ordinal_of_root: std::collections::BTreeMap<usize, usize> =
-                std::collections::BTreeMap::new();
-            face_ids
-                .iter()
-                .enumerate()
-                .map(|(i, &f)| {
-                    let root = find(&mut parent, i);
-                    let next = ordinal_of_root.len();
-                    (f, *ordinal_of_root.entry(root).or_insert(next))
-                })
-                .collect()
+            drop(index_of);
+            // Compress roots to dense ordinals in face-iteration order,
+            // reusing `parent` for the result.
+            let mut ordinal_of_root: BTreeMap<u32, u32> = BTreeMap::new();
+            for i in 0..parent.len() as u32 {
+                let root = find(&mut parent, i);
+                let next = ordinal_of_root.len() as u32;
+                let _ = ordinal_of_root.entry(root).or_insert(next);
+            }
+            let count = ordinal_of_root.len();
+            let ordinals = (0..parent.len())
+                .map(|i| ordinal_of_root[&parent[i]])
+                .collect();
+            (ordinals, count)
         };
-        let component_count = component_ordinal
-            .values()
-            .copied()
-            .max()
-            .map_or(0, |m| m + 1);
-
-        // A loop's per-edge circle claims in CANONICAL vertex order: entry `k`
-        // is the claim on the loop edge originating at `verts[k]`. Keyed off
-        // the canonical vertex order (a rotation of the raw loop) rather than
-        // raw half-edge/slot order, so the bytes stay stable across undo/redo
-        // slot reallocation — the whole point of the canonical writer. Decode
-        // re-attaches by the same rule (edge `k` originates at stored vertex
-        // `k`).
-        let loop_edge_curves = |loop_id: crate::ids::LoopId,
-                                verts: &[crate::ids::VertexId]|
-         -> Vec<Option<crate::sketch::CurveGeom>> {
-            verts
-                .iter()
-                .map(|&v| {
-                    self.loop_half_edges(loop_id)
-                        .find(|&h| self.half_edges[h].origin == v)
-                        .and_then(|h| self.edge_curve(self.half_edges[h].edge))
-                })
-                .collect()
-        };
-        let loop_edge_polys = |loop_id: crate::ids::LoopId,
-                               verts: &[crate::ids::VertexId]|
-         -> Vec<Option<crate::sketch::CurveGeom>> {
-            verts
-                .iter()
-                .map(|&v| {
-                    self.loop_half_edges(loop_id)
-                        .find(|&h| self.half_edges[h].origin == v)
-                        .and_then(|h| self.edge_polygon(self.half_edges[h].edge))
-                })
-                .collect()
-        };
-        let loop_edge_attrs =
-            |loop_id: crate::ids::LoopId, verts: &[crate::ids::VertexId]| -> Vec<Option<Vec<u8>>> {
-                verts
-                    .iter()
-                    .map(|&v| {
-                        self.loop_half_edges(loop_id)
-                            .find(|&h| self.half_edges[h].origin == v)
-                            .and_then(|h| self.attr_dict(self.edges[self.half_edges[h].edge].attrs))
-                            .map(attr_dict_json)
-                    })
-                    .collect()
-            };
-        let loop_edge_soft =
-            |loop_id: crate::ids::LoopId, verts: &[crate::ids::VertexId]| -> Vec<bool> {
-                verts
-                    .iter()
-                    .map(|&v| {
-                        self.loop_half_edges(loop_id)
-                            .find(|&h| self.half_edges[h].origin == v)
-                            .is_some_and(|h| self.edges[self.half_edges[h].edge].soft)
-                    })
-                    .collect()
-            };
-        let loop_edge_crease =
-            |loop_id: crate::ids::LoopId, verts: &[crate::ids::VertexId]| -> Vec<bool> {
-                verts
-                    .iter()
-                    .map(|&v| {
-                        self.loop_half_edges(loop_id)
-                            .find(|&h| self.half_edges[h].origin == v)
-                            .is_some_and(|h| self.edges[self.half_edges[h].edge].crease)
-                    })
-                    .collect()
-            };
 
         // The planarity tolerance the reader gives this Object: the buffer
         // stores only whether it is imported.
@@ -1796,146 +1933,112 @@ impl Object {
         // without the analytic-surface claim they carry, because the reader
         // would refuse it: only an invalid state has one (reported once
         // below).
-        let left_to_refit = std::cell::Cell::new(0usize);
-        let mut canonical_faces: Vec<CanonicalFace> = self
-            .faces
-            .iter()
-            .map(|(fid, face)| {
-                let (outer_verts, outer_ring) = canonical_loop(face.outer_loop);
-                let outer_curves = loop_edge_curves(face.outer_loop, &outer_verts);
-                let outer_soft = loop_edge_soft(face.outer_loop, &outer_verts);
-                let outer_polys = loop_edge_polys(face.outer_loop, &outer_verts);
-                let outer_crease = loop_edge_crease(face.outer_loop, &outer_verts);
-                let outer_attrs = loop_edge_attrs(face.outer_loop, &outer_verts);
-                // Build each hole with its edge-curves, then sort the whole
-                // triple by ring so the curves stay paired with their hole.
-                type HoleFull = (
-                    Vec<crate::ids::VertexId>,
-                    Vec<Point3>,
-                    Vec<Option<crate::sketch::CurveGeom>>,
-                    Vec<bool>,
-                    Vec<Option<crate::sketch::CurveGeom>>,
-                    Vec<bool>,
-                    Vec<Option<Vec<u8>>>,
-                );
-                let mut holes_full: Vec<HoleFull> = face
-                    .inner_loops
+        let mut left_to_refit = 0usize;
+        let mut canonical_faces: Vec<CanonicalFace> = Vec::with_capacity(self.faces.len());
+        for ((fid, face), &shell) in self.faces.iter().zip(&component_ordinal) {
+            let (outer_verts, outer_ring) = canonical_loop(face.outer_loop);
+            // Each hole canonicalized, then sorted by ring (stable).
+            let mut holes: Vec<(LoopId, Vec<VertexId>, Vec<Point3>)> = face
+                .inner_loops
+                .iter()
+                .map(|&il| {
+                    let (hv, hr) = canonical_loop(il);
+                    (il, hv, hr)
+                })
+                .collect();
+            holes.sort_by(|a, b| ring_cmp(&a.2, &b.2));
+            // Stored unless the loader's refit gives it bit for bit, and
+            // only when the reader accepts it: a plane its own points
+            // stray from (a state the validator rejects) is left to the
+            // refit, which reopens such a face as a v10 file always has.
+            // A ring with no refit fails the reader either way.
+            let mut written_short = false;
+            let boundary = || {
+                outer_ring
                     .iter()
-                    .map(|&il| {
-                        let (hv, hr) = canonical_loop(il);
-                        let hc = loop_edge_curves(il, &hv);
-                        let hs = loop_edge_soft(il, &hv);
-                        let hp = loop_edge_polys(il, &hv);
-                        let hk = loop_edge_crease(il, &hv);
-                        let ha = loop_edge_attrs(il, &hv);
-                        (hv, hr, hc, hs, hp, hk, ha)
-                    })
-                    .collect();
-                holes_full.sort_by(|a, b| ring_cmp(&a.1, &b.1));
-                let holes: Vec<(Vec<crate::ids::VertexId>, Vec<Point3>)> = holes_full
-                    .iter()
-                    .map(|(v, r, ..)| (v.clone(), r.clone()))
-                    .collect();
-                let hole_curves: Vec<Vec<Option<crate::sketch::CurveGeom>>> =
-                    holes_full.iter().map(|(_, _, c, ..)| c.clone()).collect();
-                let hole_polys: Vec<Vec<Option<crate::sketch::CurveGeom>>> = holes_full
-                    .iter()
-                    .map(|(_, _, _, _, p, ..)| p.clone())
-                    .collect();
-                let hole_crease: Vec<Vec<bool>> = holes_full
-                    .iter()
-                    .map(|(_, _, _, _, _, k, _)| k.clone())
-                    .collect();
-                let hole_attrs: Vec<Vec<Option<Vec<u8>>>> =
-                    holes_full.iter().map(|(.., a)| a.clone()).collect();
-                let hole_soft: Vec<Vec<bool>> = holes_full
-                    .into_iter()
-                    .map(|(_, _, _, sflags, ..)| sflags)
-                    .collect();
-                // Stored unless the loader's refit gives it bit for bit, and
-                // only when the reader accepts it: a plane its own points
-                // stray from (a state the validator rejects) is left to the
-                // refit, which reopens such a face as a v10 file always has.
-                // A ring with no refit fails the reader either way.
-                let mut written_short = false;
-                let boundary = || {
-                    outer_ring
-                        .iter()
-                        .chain(holes.iter().flat_map(|(_, ring)| ring))
-                        .copied()
-                };
-                let (plane, reopen_plane) = if version < FACE_PLANE_GEOMETRY_VERSION {
-                    (None, None)
-                } else {
-                    match outer_ring_plane(&outer_ring, reopen_tol > crate::tol::PLANE_DIST) {
-                        Ok(refit) if refit.same_bits(&face.plane) => (None, Some(refit)),
-                        Ok(refit)
-                            if !face_plane_reopens(&face.plane, &refit, boundary(), reopen_tol) =>
-                        {
-                            written_short = true;
-                            (None, Some(refit))
-                        }
-                        _ => (Some(face.plane), Some(face.plane)),
+                    .chain(holes.iter().flat_map(|(_, _, ring)| ring))
+                    .copied()
+            };
+            let (plane, reopen_plane) = if version < FACE_PLANE_GEOMETRY_VERSION {
+                (None, None)
+            } else {
+                match outer_ring_plane(&outer_ring, reopen_tol > crate::tol::PLANE_DIST) {
+                    Ok(refit) if refit.same_bits(&face.plane) => (None, Some(refit)),
+                    Ok(refit)
+                        if !face_plane_reopens(&face.plane, &refit, boundary(), reopen_tol) =>
+                    {
+                        written_short = true;
+                        (None, Some(refit))
                     }
-                };
-                // An analytic-surface claim is written only when the reader's
-                // validator accepts it on the plane the face reopens on
-                // (`surface::validate_face_claim`, the check it runs on each
-                // face's claim alone): a claim its geometry has drifted from
-                // (an invalid state, e.g. a rotation far from the origin) is
-                // dropped, so the face reopens as a plain facet instead of
-                // making the whole file unreadable. Faces without a claim
-                // (every imported mesh face) skip the check.
-                let surface = match (face.surface(), reopen_plane) {
-                    (Some(claim), Some(on)) => {
-                        let points: Vec<Point3> = boundary().collect();
-                        if crate::surface::validate_face_claim(&claim, &on, &points, reopen_tol) {
-                            Some(claim)
-                        } else {
-                            written_short = true;
-                            None
-                        }
-                    }
-                    (claim, _) => claim,
-                };
-                if written_short {
-                    left_to_refit.set(left_to_refit.get() + 1);
+                    _ => (Some(Box::new(face.plane)), Some(face.plane)),
                 }
-                CanonicalFace {
-                    plane,
-                    outer_verts,
-                    outer_ring,
-                    holes,
-                    mat_id: match face.material {
-                        Some(m) => material_dense(m),
-                        None => NO_MATERIAL,
-                    },
-                    back_mat_id: match face.back_material() {
-                        Some(m) => material_dense(m),
-                        None => NO_MATERIAL,
-                    },
-                    uv_frame: face.uv_frame(),
-                    surface,
-                    outer_curves,
-                    hole_curves,
-                    outer_polys,
-                    hole_polys,
-                    outer_soft,
-                    hole_soft,
-                    outer_crease,
-                    hole_crease,
-                    blend: face.blend(),
-                    attrs: self.attr_dict(face.attr_slot()).map(attr_dict_json),
-                    outer_attrs,
-                    hole_attrs,
-                    shell: component_ordinal[fid],
+            };
+            // An analytic-surface claim is written only when the reader's
+            // validator accepts it on the plane the face reopens on
+            // (`surface::validate_face_claim`, the check it runs on each
+            // face's claim alone): a claim its geometry has drifted from
+            // (an invalid state, e.g. a rotation far from the origin) is
+            // dropped, so the face reopens as a plain facet instead of
+            // making the whole file unreadable. Faces without a claim
+            // (every imported mesh face) skip the check.
+            let drop_surface = match (face.surface(), reopen_plane) {
+                (Some(claim), Some(on)) => {
+                    let points: Vec<Point3> = boundary().collect();
+                    !crate::surface::validate_face_claim(&claim, &on, &points, reopen_tol)
                 }
-            })
-            .collect();
-        if left_to_refit.get() > 0 {
+                _ => false,
+            };
+            if written_short || drop_surface {
+                left_to_refit += 1;
+            }
+            let edge_payloads = std::iter::once(face.outer_loop)
+                .chain(face.inner_loops.iter().copied())
+                .flat_map(|l| self.loop_half_edges(l))
+                .any(|h| {
+                    let e = self.half_edges[h].edge;
+                    let edge = &self.edges[e];
+                    edge.soft
+                        || edge.crease
+                        || !edge.attrs.is_none()
+                        || self.edge_curve(e).is_some()
+                        || self.edge_polygon(e).is_some()
+                });
+            let mut push_ring = |verts: &[VertexId]| -> (u32, u32) {
+                let start = loop_verts.len() as u32;
+                loop_verts.extend_from_slice(verts);
+                (start, verts.len() as u32)
+            };
+            let outer = push_ring(&outer_verts);
+            let holes: Box<[(LoopId, u32, u32)]> = holes
+                .iter()
+                .map(|(il, hv, _)| {
+                    let (start, len) = push_ring(hv);
+                    (*il, start, len)
+                })
+                .collect();
+            canonical_faces.push(CanonicalFace {
+                fid,
+                outer,
+                holes,
+                mat_id: match face.material {
+                    Some(m) => material_dense(m),
+                    None => NO_MATERIAL,
+                },
+                back_mat_id: match face.back_material() {
+                    Some(m) => material_dense(m),
+                    None => NO_MATERIAL,
+                },
+                drop_surface,
+                edge_payloads,
+                plane,
+                shell,
+            });
+        }
+        drop(component_ordinal);
+        if left_to_refit > 0 {
             tracing::warn!(
                 target: "kernel::save",
-                faces = left_to_refit.get(),
+                faces = left_to_refit,
                 "faces written without their plane or surface claim: it is not one \
                  the reader accepts (a point strays from it, it fails the stored-plane \
                  checks, or the face's geometry disagrees with its claimed surface)"
@@ -1950,111 +2053,133 @@ impl Object {
         // keys and give a tied face its component's rank, so the whole
         // component moves in one consistent direction. Components whose
         // entire key lists tie are byte-for-byte interchangeable, so
-        // whichever relative order they keep yields identical output.
-        let component_rank: Vec<usize> = {
-            let mut per_component: Vec<Vec<&CanonicalFace>> = vec![Vec::new(); component_count];
-            for cf in &canonical_faces {
-                per_component[cf.shell].push(cf);
-            }
-            for faces in &mut per_component {
-                faces.sort_by(|a, b| face_key_cmp(a, b));
-            }
-            let mut order: Vec<usize> = (0..per_component.len()).collect();
-            order.sort_by(|&x, &y| {
-                let (sx, sy) = (&per_component[x], &per_component[y]);
-                for (fa, fb) in sx.iter().zip(sy.iter()) {
-                    let c = face_key_cmp(fa, fb);
-                    if c != std::cmp::Ordering::Equal {
-                        return c;
-                    }
+        // whichever relative order they keep yields identical output. A
+        // single component has rank 0.
+        if component_count > 1 {
+            let component_rank: Vec<u32> = {
+                let mut per_component: Vec<Vec<&CanonicalFace>> = vec![Vec::new(); component_count];
+                for cf in &canonical_faces {
+                    per_component[cf.shell as usize].push(cf);
                 }
-                sx.len().cmp(&sy.len())
-            });
-            let mut rank = vec![0usize; per_component.len()];
-            for (r, &ordinal) in order.iter().enumerate() {
-                rank[ordinal] = r;
+                for faces in &mut per_component {
+                    faces.sort_by(|a, b| face_key_cmp(&loop_verts, a, b));
+                }
+                let mut order: Vec<usize> = (0..per_component.len()).collect();
+                order.sort_by(|&x, &y| {
+                    let (sx, sy) = (&per_component[x], &per_component[y]);
+                    for (fa, fb) in sx.iter().zip(sy.iter()) {
+                        let c = face_key_cmp(&loop_verts, fa, fb);
+                        if c != Ordering::Equal {
+                            return c;
+                        }
+                    }
+                    sx.len().cmp(&sy.len())
+                });
+                let mut rank = vec![0u32; per_component.len()];
+                for (r, &ordinal) in order.iter().enumerate() {
+                    rank[ordinal] = r as u32;
+                }
+                rank
+            };
+            for cf in &mut canonical_faces {
+                cf.shell = component_rank[cf.shell as usize];
             }
-            rank
-        };
-        for cf in &mut canonical_faces {
-            cf.shell = component_rank[cf.shell];
         }
 
-        // Sorted by index, then moved into place once: a face's record is
-        // large, and a sort that moves records costs more than the
-        // comparisons on a mesh of half a million faces. The sort is
-        // stable, so ties keep their order exactly as sorting the records
-        // would.
-        let mut order: Vec<usize> = (0..canonical_faces.len()).collect();
+        // The faces in canonical order, as indices: a stable sort, so ties
+        // keep their order exactly as sorting the records would, and the
+        // records themselves never move.
+        let mut order: Vec<u32> = (0..canonical_faces.len() as u32).collect();
         order.sort_by(|&i, &j| {
-            let (a, b) = (&canonical_faces[i], &canonical_faces[j]);
-            face_key_cmp(a, b).then_with(|| a.shell.cmp(&b.shell))
+            let (a, b) = (&canonical_faces[i as usize], &canonical_faces[j as usize]);
+            face_key_cmp(&loop_verts, a, b).then_with(|| a.shell.cmp(&b.shell))
         });
-        let mut slots: Vec<Option<CanonicalFace>> = canonical_faces.into_iter().map(Some).collect();
-        let canonical_faces: Vec<CanonicalFace> = order
-            .into_iter()
-            .map(|i| slots[i].take().expect("each index once"))
-            .collect();
 
         // Vertex order: first appearance in the canonical face walk. Valid
         // topology references every vertex from some loop; any vertex that
         // is somehow unreferenced still gets a (position-sorted) slot at the
         // end rather than being dropped (rule 4: never repair, and never
         // lose data either).
-        let mut vertex_index: SecondaryMap<crate::ids::VertexId, u32> = SecondaryMap::new();
-        let mut ordered_vertices: Vec<crate::ids::VertexId> =
-            Vec::with_capacity(self.vertices.len());
+        let mut vertex_index: SecondaryMap<VertexId, u32> =
+            SecondaryMap::with_capacity(self.vertices.len());
+        let mut ordered_vertices: Vec<VertexId> = Vec::with_capacity(self.vertices.len());
         {
-            let assign = |vid: crate::ids::VertexId,
-                          vertex_index: &mut SecondaryMap<crate::ids::VertexId, u32>,
-                          ordered: &mut Vec<crate::ids::VertexId>| {
+            let mut assign = |vid: VertexId| {
                 if !vertex_index.contains_key(vid) {
-                    vertex_index.insert(vid, ordered.len() as u32);
-                    ordered.push(vid);
+                    vertex_index.insert(vid, ordered_vertices.len() as u32);
+                    ordered_vertices.push(vid);
                 }
             };
-            for cf in &canonical_faces {
-                for &vid in &cf.outer_verts {
-                    assign(vid, &mut vertex_index, &mut ordered_vertices);
+            for &i in &order {
+                let cf = &canonical_faces[i as usize];
+                for &vid in &loop_verts[ring_of(cf.outer)] {
+                    assign(vid);
                 }
-                for (hole_verts, _) in &cf.holes {
-                    for &vid in hole_verts {
-                        assign(vid, &mut vertex_index, &mut ordered_vertices);
+                for &(_, start, len) in cf.holes.iter() {
+                    for &vid in &loop_verts[ring_of((start, len))] {
+                        assign(vid);
                     }
                 }
             }
-            let mut leftovers: Vec<crate::ids::VertexId> = self
-                .vertices
-                .keys()
-                .filter(|&vid| !vertex_index.contains_key(vid))
-                .collect();
-            leftovers
-                .sort_by(|&a, &b| pos_cmp(self.vertices[a].position, self.vertices[b].position));
-            for vid in leftovers {
-                assign(vid, &mut vertex_index, &mut ordered_vertices);
-            }
         }
+        let mut leftovers: Vec<VertexId> = self
+            .vertices
+            .keys()
+            .filter(|&vid| !vertex_index.contains_key(vid))
+            .collect();
+        leftovers.sort_by(|&a, &b| pos_cmp(pos(a), pos(b)));
+        for vid in leftovers {
+            vertex_index.insert(vid, ordered_vertices.len() as u32);
+            ordered_vertices.push(vid);
+        }
+
+        // The buffer sized up front for every block that does not depend on
+        // per-edge payloads, dictionaries or surface claims: exactly the
+        // buffer of a plain mesh, so a large one never grows by doubling.
+        buf.reserve({
+            let mut size = 4 + 24 * ordered_vertices.len() + 4;
+            for cf in &canonical_faces {
+                let face = &self.faces[cf.fid];
+                size += 4 + 1 + 1 + 4 + 4 * cf.outer.1 as usize + 4;
+                size += cf.holes.iter().map(|h| 4 + 4 * h.2 as usize).sum::<usize>();
+                size += if face.uv_frame().is_some() { 64 } else { 0 };
+                size += 3 + 1 + if cf.back_mat_id == NO_MATERIAL { 0 } else { 4 };
+                if version >= FACE_PLANE_GEOMETRY_VERSION {
+                    size += 1 + if cf.plane.is_some() { 32 } else { 0 };
+                }
+                if version >= ELEMENT_ATTRS_GEOMETRY_VERSION {
+                    size += 2;
+                }
+                if version >= CURVES_GEOMETRY_VERSION {
+                    size += 2 + if face.blend().is_some() { 6 } else { 0 };
+                }
+            }
+            size
+        });
 
         // --- vertices (canonical order) ---
         let vertex_count = self.vertices.len() as u32;
         buf.extend_from_slice(&vertex_count.to_le_bytes());
         for &vid in &ordered_vertices {
-            let v = &self.vertices[vid];
-            buf.extend_from_slice(&v.position.x.to_le_bytes());
-            buf.extend_from_slice(&v.position.y.to_le_bytes());
-            buf.extend_from_slice(&v.position.z.to_le_bytes());
+            let p = pos(vid);
+            buf.extend_from_slice(&p.x.to_le_bytes());
+            buf.extend_from_slice(&p.y.to_le_bytes());
+            buf.extend_from_slice(&p.z.to_le_bytes());
         }
+        drop(ordered_vertices);
 
         // --- faces (canonical order) ---
         let face_count = self.faces.len() as u32;
         buf.extend_from_slice(&face_count.to_le_bytes());
 
-        for cf in &canonical_faces {
+        for &i in &order {
+            let cf = &canonical_faces[i as usize];
+            let face = &self.faces[cf.fid];
             // per-face material
             buf.extend_from_slice(&cf.mat_id.to_le_bytes());
 
             // per-face UV frame (v2): u8 flag (0=none, 1=present) + 8×f64 LE
-            match cf.uv_frame {
+            match face.uv_frame() {
                 None => buf.push(0u8),
                 Some(f) => {
                     buf.push(1u8);
@@ -2072,7 +2197,7 @@ impl Object {
             // per-face analytic surface (v4; kinds 2–4 v10): u8 kind
             // (0 none, 1 cylinder, 2 sphere, 3 torus, 4 cone) + the class's
             // f64 payload, LE, in `surface_wire` order.
-            match cf.surface {
+            match face_surface(cf) {
                 None => buf.push(0u8),
                 Some(sr) => {
                     let (kind, payload) = surface_wire(&sr);
@@ -2084,19 +2209,17 @@ impl Object {
             }
 
             // outer loop
-            let outer_count = cf.outer_verts.len() as u32;
-            buf.extend_from_slice(&outer_count.to_le_bytes());
-            for &vid in &cf.outer_verts {
+            buf.extend_from_slice(&cf.outer.1.to_le_bytes());
+            for &vid in &loop_verts[ring_of(cf.outer)] {
                 buf.extend_from_slice(&vertex_index[vid].to_le_bytes());
             }
 
             // hole loops
             let hole_count = cf.holes.len() as u32;
             buf.extend_from_slice(&hole_count.to_le_bytes());
-            for (hole_verts, _) in &cf.holes {
-                let hole_vertex_count = hole_verts.len() as u32;
-                buf.extend_from_slice(&hole_vertex_count.to_le_bytes());
-                for &vid in hole_verts {
+            for &(_, start, len) in cf.holes.iter() {
+                buf.extend_from_slice(&len.to_le_bytes());
+                for &vid in &loop_verts[ring_of((start, len))] {
                     buf.extend_from_slice(&vertex_index[vid].to_le_bytes());
                 }
             }
@@ -2105,7 +2228,7 @@ impl Object {
             // the outer ring is the plane bit for bit, 1 = stored) + the
             // unit normal xyz and offset as 4×f64 LE.
             if version >= FACE_PLANE_GEOMETRY_VERSION {
-                match cf.plane {
+                match &cf.plane {
                     None => buf.push(0u8),
                     Some(p) => {
                         buf.push(1u8);
@@ -2117,94 +2240,66 @@ impl Object {
                 }
             }
 
+            // The per-edge payloads, outer loop then each hole, when any
+            // edge of the face may carry one.
+            let edges = cf.edge_payloads.then(|| face_edges(&loop_verts, cf));
+            let per_edge = |pick: &dyn Fn(&EdgeBlocks) -> usize| -> usize {
+                edges.as_ref().map_or(0, |(outer, holes)| {
+                    pick(outer) + holes.iter().map(pick).sum::<usize>()
+                })
+            };
+
             // per-face edge-curve claims (v5): a u8 "any" flag; when 1, an
             // (flag + optional 4×f64) entry per outer edge then per hole edge,
             // in CANONICAL loop order — entry k is the edge originating at the
-            // k-th canonical vertex emitted above, captured on `cf`. Decode
-            // re-attaches by the same rule against the rebuilt loop.
+            // k-th canonical vertex emitted above. Decode re-attaches by the
+            // same rule against the rebuilt loop.
             // per-face SOFT flags (v6): a u8 "any" flag; when 1, one u8
             // per outer edge then per hole edge, same canonical order as
             // the edge-curve block below. Written FIRST so decode order is
             // version-monotonic (v5 readers never see it — they refuse the
             // v6 buffer outright).
-            let any_soft = cf
-                .outer_soft
-                .iter()
-                .chain(cf.hole_soft.iter().flatten())
-                .any(|&f| f);
-            if !any_soft {
-                buf.push(0u8);
-            } else {
-                buf.push(1u8);
-                for &f in &cf.outer_soft {
-                    buf.push(u8::from(f));
-                }
-                for hole in &cf.hole_soft {
-                    for &f in hole {
-                        buf.push(u8::from(f));
+            let any_soft = per_edge(&|b| b.soft.iter().filter(|&&f| f).count()) > 0;
+            match (&edges, any_soft) {
+                (Some((outer, holes)), true) => {
+                    buf.push(1u8);
+                    for b in std::iter::once(outer).chain(holes) {
+                        for &f in &b.soft {
+                            buf.push(u8::from(f));
+                        }
                     }
                 }
+                _ => buf.push(0u8),
             }
 
-            let any = cf
-                .outer_curves
-                .iter()
-                .chain(cf.hole_curves.iter().flatten())
-                .any(Option::is_some);
-            if !any {
-                buf.push(0u8);
-            } else {
-                buf.push(1u8);
-                let mut write_edge = |c: &Option<crate::sketch::CurveGeom>| match c {
-                    None => buf.push(0u8),
-                    Some(g) => {
-                        buf.push(1u8);
-                        buf.extend_from_slice(&g.center.x.to_le_bytes());
-                        buf.extend_from_slice(&g.center.y.to_le_bytes());
-                        buf.extend_from_slice(&g.center.z.to_le_bytes());
-                        buf.extend_from_slice(&g.radius.to_le_bytes());
+            let write_curves =
+                |buf: &mut Vec<u8>, pick: &dyn Fn(&EdgeBlocks) -> &[Option<CurveGeom>]| {
+                    let any = per_edge(&|b| pick(b).iter().filter(|c| c.is_some()).count()) > 0;
+                    match (&edges, any) {
+                        (Some((outer, holes)), true) => {
+                            buf.push(1u8);
+                            for b in std::iter::once(outer).chain(holes) {
+                                for c in pick(b) {
+                                    match c {
+                                        None => buf.push(0u8),
+                                        Some(g) => {
+                                            buf.push(1u8);
+                                            buf.extend_from_slice(&g.center.x.to_le_bytes());
+                                            buf.extend_from_slice(&g.center.y.to_le_bytes());
+                                            buf.extend_from_slice(&g.center.z.to_le_bytes());
+                                            buf.extend_from_slice(&g.radius.to_le_bytes());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        _ => buf.push(0u8),
                     }
                 };
-                for c in &cf.outer_curves {
-                    write_edge(c);
-                }
-                for hole in &cf.hole_curves {
-                    for c in hole {
-                        write_edge(c);
-                    }
-                }
-            }
-
+            write_curves(&mut buf, &|b| &b.curves);
             // per-face polygon claims (v7): the edge-curve block's shape, for
             // [`crate::topo::EdgeArcs::polygon`], written after it.
-            let any_poly = cf
-                .outer_polys
-                .iter()
-                .chain(cf.hole_polys.iter().flatten())
-                .any(Option::is_some);
-            if !any_poly {
-                buf.push(0u8);
-            } else {
-                buf.push(1u8);
-                let mut write_edge = |c: &Option<crate::sketch::CurveGeom>| match c {
-                    None => buf.push(0u8),
-                    Some(g) => {
-                        buf.push(1u8);
-                        buf.extend_from_slice(&g.center.x.to_le_bytes());
-                        buf.extend_from_slice(&g.center.y.to_le_bytes());
-                        buf.extend_from_slice(&g.center.z.to_le_bytes());
-                        buf.extend_from_slice(&g.radius.to_le_bytes());
-                    }
-                };
-                for c in &cf.outer_polys {
-                    write_edge(c);
-                }
-                for hole in &cf.hole_polys {
-                    for c in hole {
-                        write_edge(c);
-                    }
-                }
-            }
+            write_curves(&mut buf, &|b| &b.polys);
 
             // per-face back paint (v8): u8 flag (0 = none, 1 = present) +
             // the dense material id, after the polygon claims.
@@ -2228,22 +2323,21 @@ impl Object {
                     buf.extend_from_slice(bytes);
                 }
             };
-            write_dict(&mut buf, &cf.attrs);
+            write_dict(&mut buf, &face_dict(cf));
             // per-edge dictionaries (v9): a u8 "any" flag; when 1, one
             // dictionary entry per outer edge then per hole edge, in the
             // canonical order the other per-edge blocks use.
-            let any_attrs = cf
-                .outer_attrs
-                .iter()
-                .chain(cf.hole_attrs.iter().flatten())
-                .any(Option::is_some);
-            if !any_attrs {
-                buf.push(0u8);
-            } else {
-                buf.push(1u8);
-                for d in cf.outer_attrs.iter().chain(cf.hole_attrs.iter().flatten()) {
-                    write_dict(&mut buf, d);
+            let any_attrs = per_edge(&|b| b.attrs.iter().filter(|d| d.is_some()).count()) > 0;
+            match (&edges, any_attrs) {
+                (Some((outer, holes)), true) => {
+                    buf.push(1u8);
+                    for b in std::iter::once(outer).chain(holes) {
+                        for d in &b.attrs {
+                            write_dict(&mut buf, d);
+                        }
+                    }
                 }
+                _ => buf.push(0u8),
             }
 
             if version < CURVES_GEOMETRY_VERSION {
@@ -2251,27 +2345,22 @@ impl Object {
             }
             // per-face CREASE flags (v10): the soft block's shape — a u8
             // "any" flag, and when 1 one u8 per outer edge then per hole edge.
-            let any_crease = cf
-                .outer_crease
-                .iter()
-                .chain(cf.hole_crease.iter().flatten())
-                .any(|&f| f);
-            if !any_crease {
-                buf.push(0u8);
-            } else {
-                buf.push(1u8);
-                for &f in cf
-                    .outer_crease
-                    .iter()
-                    .chain(cf.hole_crease.iter().flatten())
-                {
-                    buf.push(u8::from(f));
+            let any_crease = per_edge(&|b| b.crease.iter().filter(|&&f| f).count()) > 0;
+            match (&edges, any_crease) {
+                (Some((outer, holes)), true) => {
+                    buf.push(1u8);
+                    for b in std::iter::once(outer).chain(holes) {
+                        for &f in &b.crease {
+                            buf.push(u8::from(f));
+                        }
+                    }
                 }
+                _ => buf.push(0u8),
             }
 
             // per-face blend tag (v10): u8 flag, and when 1 the u32 id, u8
             // kind, u8 role.
-            match cf.blend {
+            match face.blend() {
                 None => buf.push(0u8),
                 Some(t) => {
                     buf.push(1u8);
@@ -2281,12 +2370,14 @@ impl Object {
                 }
             }
         }
+        buf.shrink_to_fit();
 
         buf
     }
 
     /// Decodes a buffer produced by [`Object::encode`] (any supported version),
-    /// rebuilding topology via [`Object::from_faces_with_holes`] and running the
+    /// building topology face by face as it reads them (`build::FaceBuilder`, the
+    /// path behind [`Object::from_faces_with_holes`]) and running the
     /// full validator before returning (rule 4: validate, never repair).
     ///
     /// `dense_material` maps a dense material id back to the live [`MaterialId`]
@@ -2365,34 +2456,46 @@ impl Object {
         }
 
         // --- faces ---
-        use crate::build::FaceSpec;
+        // Each face goes into the Object as it is read
+        // (`build::FaceBuilder`), into tables sized by a first pass over the
+        // records (`face_table_sizes`). When that pass cannot walk them (a
+        // corrupt buffer, which the read below then refuses), room is made
+        // for the faces the buffer can hold as triangles (a face record is
+        // at least 24 bytes), so a corrupt count cannot reserve more than
+        // the file could describe.
         let face_count = r.read_u32()? as usize;
-        let mut face_specs: Vec<FaceSpec> = Vec::with_capacity(face_count);
-        // v9 per-edge dictionaries, parallel to `face_specs`: `(outer,
-        // per-hole)`, empty lists when the face's edges carry none.
-        type FaceDicts = (
-            Vec<Option<crate::attr::AttrDict>>,
-            Vec<Vec<Option<crate::attr::AttrDict>>>,
-        );
-        let mut edge_dicts: Vec<FaceDicts> = Vec::with_capacity(face_count);
-        // v5 per-face edge-curve claims, parallel to `face_specs` (in the same
-        // face order `from_faces_with_holes` rebuilds them, so a positional zip
-        // stamps them back after the build). `(outer_edge_curves, per-hole
-        // edge_curves)`.
-        #[allow(clippy::type_complexity)]
+        let (loops, half_edges) = face_table_sizes(bytes, r.pos, version, face_count)
+            .unwrap_or_else(|| {
+                let room = face_count.min(bytes.len().saturating_sub(r.pos) / 24);
+                (room, 3 * room)
+            });
+        let room = face_count.min(loops);
+        let mut builder = crate::build::FaceBuilder::new(&positions, room, loops, half_edges);
         /// Per-face `(outer, per-hole)` decode collectors.
         type FaceFlags = (Vec<bool>, Vec<Vec<bool>>);
+        #[allow(clippy::type_complexity)]
         type FaceCurves = (
             Vec<Option<crate::sketch::CurveGeom>>,
             Vec<Vec<Option<crate::sketch::CurveGeom>>>,
         );
-        let mut edge_soft: Vec<FaceFlags> = Vec::new();
-        let mut edge_curves: Vec<FaceCurves> = Vec::with_capacity(face_count);
-        let mut edge_polys: Vec<FaceCurves> = Vec::with_capacity(face_count);
-        let mut backs: Vec<crate::material::FaceMaterial> = Vec::with_capacity(face_count);
-        // v10 per-face crease flags and blend tags, parallel to `face_specs`.
-        let mut edge_crease: Vec<FaceFlags> = Vec::with_capacity(face_count);
-        let mut blends: Vec<Option<crate::topo::BlendTag>> = Vec::with_capacity(face_count);
+        #[allow(clippy::type_complexity)]
+        type FaceDicts = (
+            Vec<Option<crate::attr::AttrDict>>,
+            Vec<Vec<Option<crate::attr::AttrDict>>>,
+        );
+        /// A face's per-edge blocks as read, each empty when the face wrote
+        /// none: SOFT flags (v6), circle claims (v5), polygon claims (v7),
+        /// dictionaries (v9), CREASE flags (v10). Kept only for faces with
+        /// at least one, in face order, and stamped onto the edges once
+        /// they exist.
+        struct EdgeBlocksIn {
+            soft: FaceFlags,
+            curves: FaceCurves,
+            polys: FaceCurves,
+            dicts: FaceDicts,
+            crease: FaceFlags,
+        }
+        let mut edge_blocks: Vec<(FaceId, Box<EdgeBlocksIn>)> = Vec::new();
 
         for _ in 0..face_count {
             let mat_raw = r.read_u32()?;
@@ -2625,7 +2728,6 @@ impl Object {
             } else {
                 (Vec::new(), Vec::new()) // pre-v6: nothing soft
             };
-            edge_soft.push((outer_soft, hole_soft));
 
             // v5: per-face edge-curve claims, appended after the hole loops.
             // A u8 "any" flag; when 1, one (flag + optional 4×f64) entry per
@@ -2686,7 +2788,6 @@ impl Object {
             } else {
                 (Vec::new(), Vec::new()) // pre-v5: no edge-curve claims
             };
-            edge_curves.push((outer_curves, hole_curves));
 
             // v7: per-face polygon claims, the edge-curve block's shape.
             let polys = if version >= 7 {
@@ -2694,7 +2795,6 @@ impl Object {
             } else {
                 (Vec::new(), Vec::new()) // pre-v7: no polygon claims
             };
-            edge_polys.push(polys);
 
             // v8: per-face back paint (flag + dense id).
             let back = match if version >= 8 { r.read_u8()? } else { 0 } {
@@ -2713,7 +2813,6 @@ impl Object {
                     });
                 }
             };
-            backs.push(back);
 
             // v9: the face's dictionary, then its edges'.
             let (face_dict, dicts) = if version >= ELEMENT_ATTRS_GEOMETRY_VERSION {
@@ -2747,7 +2846,6 @@ impl Object {
             } else {
                 (crate::attr::AttrDict::new(), (Vec::new(), Vec::new()))
             };
-            edge_dicts.push(dicts);
 
             // v10: per-face CREASE flags (the soft block's shape) then the
             // blend tag (u8 flag [+ u32 id, u8 kind, u8 role]).
@@ -2788,7 +2886,6 @@ impl Object {
             } else {
                 (Vec::new(), Vec::new())
             };
-            edge_crease.push((outer_crease, hole_crease));
             let blend = if version >= CURVES_GEOMETRY_VERSION {
                 match r.read_u8()? {
                     0 => None,
@@ -2832,39 +2929,56 @@ impl Object {
             } else {
                 None
             };
-            blends.push(blend);
 
-            face_specs.push((
-                outer,
-                holes,
+            let fid = builder.add_face(
+                &outer,
+                &holes,
                 plane,
                 face_material,
                 uv_frame,
                 surface,
-                face_dict,
-            ));
+                &face_dict,
+            );
+            let face = &mut builder.object_mut().faces[fid];
+            face.set_back_material(back);
+            face.set_blend(blend);
+            if !(outer_soft.is_empty()
+                && outer_curves.is_empty()
+                && polys.0.is_empty()
+                && dicts.0.is_empty()
+                && outer_crease.is_empty())
+            {
+                edge_blocks.push((
+                    fid,
+                    Box::new(EdgeBlocksIn {
+                        soft: (outer_soft, hole_soft),
+                        curves: (outer_curves, hole_curves),
+                        polys,
+                        dicts,
+                        crease: (outer_crease, hole_crease),
+                    }),
+                ));
+            }
         }
+        drop(positions);
 
-        // Rebuild topology via the existing builder path.
-        let mut obj = Object::from_faces_with_holes(&positions, &face_specs);
-        obj.set_built_back_materials(&backs);
-        obj.set_built_blends(&blends);
+        // Pair the edges and finish the topology.
+        let mut obj = builder.finish();
         obj.default_material = base_material;
         // Restore the per-object planarity gate before validating, so an imported
         // object's near-planar faces are held to IMPORT_PLANE_DIST, not the
         // strict default.
         obj.planarity_tol = planarity_tol;
 
-        // Restore per-edge circle claims (v5). Faces rebuild in `face_specs`
-        // order, so the face slotmap iterates in that same order and this
-        // positional zip re-attaches each face's loop-edge claims. The two
+        // Restore per-edge circle claims (v5): each face's loop-edge claims
+        // re-attach positionally (entry `k` on the loop's `k`-th edge). The two
         // incident faces of a shared edge each stored the claim; a VALIDATING
         // loader requires they AGREE within tolerance and rejects a tampered
         // file whose faces disagree — never silent last-writer-wins. Runs
         // before validation, so a stale stored claim also fails
         // (`EdgeCurveMismatch`).
-        let face_ids: Vec<FaceId> = obj.faces.keys().collect();
-        for (fid, (outer_curves, hole_curves)) in face_ids.iter().copied().zip(&edge_curves) {
+        for (fid, blocks) in &edge_blocks {
+            let (fid, (outer_curves, hole_curves)) = (*fid, &blocks.curves);
             let outer_loop = obj.faces[fid].outer_loop;
             let inner_loops = obj.faces[fid].inner_loops.clone();
             let loops = std::iter::once((outer_loop, outer_curves))
@@ -2893,7 +3007,8 @@ impl Object {
 
         // Restore per-edge polygon claims (v7), positionally like the curve
         // claims above; a shared edge's two faces must agree.
-        for (fid, (outer_polys, hole_polys)) in face_ids.iter().copied().zip(&edge_polys) {
+        for (fid, blocks) in &edge_blocks {
+            let (fid, (outer_polys, hole_polys)) = (*fid, &blocks.polys);
             let outer_loop = obj.faces[fid].outer_loop;
             let inner_loops = obj.faces[fid].inner_loops.clone();
             let loops = std::iter::once((outer_loop, outer_polys))
@@ -2925,7 +3040,8 @@ impl Object {
         // carried the same flag at save (one edge record), so simply OR —
         // a disagreement can only make an edge soft that one face claimed,
         // which the validator's twin gate still bounds.
-        for (fid, (outer_soft, hole_soft)) in face_ids.iter().copied().zip(&edge_soft) {
+        for (fid, blocks) in &edge_blocks {
+            let (fid, (outer_soft, hole_soft)) = (*fid, &blocks.soft);
             let outer_loop = obj.faces[fid].outer_loop;
             let inner_loops = obj.faces[fid].inner_loops.clone();
             let loops = std::iter::once((outer_loop, outer_soft))
@@ -2945,11 +3061,29 @@ impl Object {
         // above. Every loop edge is written by each face it bounds, so a
         // shared edge is read twice and the two entries must agree exactly
         // (both absent, or equal dictionaries); anything else is a tampered
-        // file, rejected rather than resolved by write order.
-        if version >= ELEMENT_ATTRS_GEOMETRY_VERSION {
+        // file, rejected rather than resolved by write order. Faces that
+        // wrote no block state "none" for each of their edges; when no face
+        // wrote one, every entry is "none" and there is nothing to do.
+        // `blocks_by_face` walks `edge_blocks` beside the face table (both
+        // in build order).
+        let blocks_by_face = |obj: &Object| -> Vec<(FaceId, Option<&EdgeBlocksIn>)> {
+            let mut next = edge_blocks.iter().peekable();
+            obj.faces
+                .keys()
+                .map(|fid| {
+                    let blocks = next.next_if(|(f, _)| *f == fid).map(|(_, b)| &**b);
+                    (fid, blocks)
+                })
+                .collect()
+        };
+        let no_dicts: FaceDicts = (Vec::new(), Vec::new());
+        if version >= ELEMENT_ATTRS_GEOMETRY_VERSION
+            && edge_blocks.iter().any(|(_, b)| !b.dicts.0.is_empty())
+        {
             let mut seen: SecondaryMap<crate::ids::EdgeId, Option<crate::attr::AttrDict>> =
                 SecondaryMap::new();
-            for (fid, (outer_dicts, hole_dicts)) in face_ids.iter().copied().zip(&edge_dicts) {
+            for (fid, blocks) in blocks_by_face(&obj) {
+                let (outer_dicts, hole_dicts) = blocks.map_or(&no_dicts, |b| &b.dicts);
                 let outer_loop = obj.faces[fid].outer_loop;
                 let inner_loops = obj.faces[fid].inner_loops.clone();
                 let loops = std::iter::once((outer_loop, outer_dicts))
@@ -2984,9 +3118,13 @@ impl Object {
         // Restore per-edge CREASE flags (v10), positionally. Unlike soft (OR'd
         // for compatibility), the two faces of a shared edge must agree: a
         // face with no crease block states "no crease" for each of its edges.
-        if version >= CURVES_GEOMETRY_VERSION {
+        let no_crease: FaceFlags = (Vec::new(), Vec::new());
+        if version >= CURVES_GEOMETRY_VERSION
+            && edge_blocks.iter().any(|(_, b)| !b.crease.0.is_empty())
+        {
             let mut seen: SecondaryMap<crate::ids::EdgeId, bool> = SecondaryMap::new();
-            for (fid, (outer_crease, hole_crease)) in face_ids.iter().copied().zip(&edge_crease) {
+            for (fid, blocks) in blocks_by_face(&obj) {
+                let (outer_crease, hole_crease) = blocks.map_or(&no_crease, |b| &b.crease);
                 let outer_loop = obj.faces[fid].outer_loop;
                 let inner_loops = obj.faces[fid].inner_loops.clone();
                 let empty: Vec<bool> = Vec::new();
@@ -4691,6 +4829,14 @@ pub(crate) enum MemberDto {
 
 /// Write a single stored (uncompressed) entry into a zip writer with zeroed
 /// timestamps and external attributes for determinism.
+/// Bytes a stored container entry adds beside its data and its name (the
+/// name appears twice): the local header (30) and the central directory
+/// record (46), with room for the extra fields the zip writer may add.
+const ZIP_ENTRY_OVERHEAD: usize = 30 + 46 + 64;
+/// Bytes the end of a container adds: the end-of-central-directory record
+/// (22), with room for its 64-bit form.
+const ZIP_END_OVERHEAD: usize = 22 + 56 + 20 + 64;
+
 fn zip_add_stored_entry<W: Write + Seek>(
     zip: &mut zip::ZipWriter<W>,
     name: &str,
@@ -4733,6 +4879,19 @@ fn zip_read_entry<R: Read + Seek>(
     zip: &mut zip::ZipArchive<R>,
     name: &str,
 ) -> Result<Vec<u8>, LoadError> {
+    zip_read_entry_sized(zip, name, 0)
+}
+
+/// [`zip_read_entry`] into a buffer sized up front to the entry's declared
+/// length when that is at most `container_len` (the archive's own length; a
+/// stored entry is never longer), so a large geometry buffer is read without
+/// growing by doubling. A declared length above it is not trusted for the
+/// reservation, only for the read's ordinary checks.
+fn zip_read_entry_sized<R: Read + Seek>(
+    zip: &mut zip::ZipArchive<R>,
+    name: &str,
+    container_len: u64,
+) -> Result<Vec<u8>, LoadError> {
     let entry = zip.by_name(name).map_err(|_| LoadError::MissingAsset {
         path: name.to_string(),
     })?;
@@ -4740,7 +4899,12 @@ fn zip_read_entry<R: Read + Seek>(
     // it's a decompression bomb (or corrupt) and the container is rejected. We
     // read via `take` rather than trusting the header's declared size, which is
     // itself attacker-controlled.
-    let mut buf = Vec::new();
+    let declared = entry.size();
+    let mut buf = if declared <= container_len.min(MAX_ENTRY_BYTES) {
+        Vec::with_capacity(declared as usize)
+    } else {
+        Vec::new()
+    };
     let mut limited = entry.take(MAX_ENTRY_BYTES + 1);
     limited
         .read_to_end(&mut buf)
@@ -5277,15 +5441,34 @@ pub(crate) fn encode_document(data: DocSaveData) -> Vec<u8> {
         serde_json::to_vec_pretty(&manifest).expect("manifest serialization must not fail");
 
     // ── 5. Assemble zip (HEW_FILE_FORMAT.md fixed entry order) ────────────
-    let out_cursor = Cursor::new(Vec::<u8>::new());
+    // The output sized up front from the entries (each entry's data, its
+    // name twice, and the fixed header records), so a large document is not
+    // copied into a buffer that grows by doubling.
+    let geometry_names: Vec<String> = (0..geometry_buffers.len())
+        .map(|i| format!("geometry/obj_{i}.bin"))
+        .collect();
+    let entries = std::iter::once(("manifest.json", manifest_json.len()))
+        .chain(
+            geometry_names
+                .iter()
+                .zip(&geometry_buffers)
+                .map(|(name, b)| (name.as_str(), b.len())),
+        )
+        .chain(texture_entries.iter().map(|(p, b)| (p.as_str(), b.len())));
+    let capacity = entries
+        .map(|(name, len)| len + 2 * name.len() + ZIP_ENTRY_OVERHEAD)
+        .sum::<usize>()
+        + ZIP_END_OVERHEAD;
+    let out_cursor = Cursor::new(Vec::<u8>::with_capacity(capacity));
     let mut zip = zip::ZipWriter::new(out_cursor);
 
     zip_add_stored_entry(&mut zip, "manifest.json", &manifest_json)
         .expect("zip write must not fail");
+    drop(manifest_json);
 
-    for (i, geom_buf) in geometry_buffers.iter().enumerate() {
-        let name = format!("geometry/obj_{i}.bin");
-        zip_add_stored_entry(&mut zip, &name, geom_buf).expect("zip write must not fail");
+    // Each geometry buffer is freed once it is in the container.
+    for (name, geom_buf) in geometry_names.iter().zip(geometry_buffers) {
+        zip_add_stored_entry(&mut zip, name, &geom_buf).expect("zip write must not fail");
     }
 
     for (path, bytes) in &texture_entries {
@@ -5784,7 +5967,7 @@ pub(crate) fn decode_document_raw(bytes: &[u8]) -> Result<DocLoadRaw, LoadError>
     let mut obj_names: Vec<Option<String>> = Vec::with_capacity(obj_count);
     let mut obj_blends: Vec<Vec<BlendRecordDto>> = Vec::with_capacity(obj_count);
     for obj_dto in &manifest.objects {
-        let buf = zip_read_entry(&mut zip, &obj_dto.geometry)?;
+        let buf = zip_read_entry_sized(&mut zip, &obj_dto.geometry, bytes.len() as u64)?;
         geom_buffers.push(buf);
         obj_base_materials.push(obj_dto.base_material);
         obj_names.push(obj_dto.name.clone());
@@ -8509,5 +8692,49 @@ mod face_plane_writer_tests {
         let back = Object::decode(&bytes, &|_| None).unwrap();
         back.validate().unwrap();
         assert!(back.faces.values().all(|f| f.surface().is_none()));
+    }
+
+    /// The reader's first pass over the face records counts exactly the
+    /// loops and half-edges the Object has, past every optional block
+    /// (holes, SOFT and CREASE flags, circle and polygon claims,
+    /// dictionaries), and gives up on a buffer cut short.
+    #[test]
+    fn the_size_walk_counts_every_loop_and_half_edge() {
+        use crate::sketch::CurveGeom;
+        let mut marked = tunnelled_block();
+        let edges: Vec<_> = marked.edges.keys().take(2).collect();
+        marked.edges[edges[0]].soft = true;
+        marked.edges[edges[1]].crease = true;
+        let circle = Some(CurveGeom {
+            center: Point3::new(0.0, 0.0, 0.0),
+            radius: 1.0,
+        });
+        marked.set_edge_curve(edges[1], circle);
+        marked.set_edge_polygon(edges[0], circle);
+        let dict: crate::attr::AttrDict = [(
+            "ns".to_string(),
+            [("k".to_string(), crate::attr::AttrValue::Bool(true))].into(),
+        )]
+        .into();
+        marked.set_edge_attrs(edges[0], dict.clone());
+        let face = marked.faces.keys().next().unwrap();
+        let slot = marked.intern_attrs(dict);
+        marked.faces[face].set_attr_slot(slot);
+
+        for obj in [cube(), tunnelled_block(), marked] {
+            let bytes = obj.encode(&|_| 0);
+            let version = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
+            let vertices = u32::from_le_bytes(bytes[14..18].try_into().unwrap()) as usize;
+            let at = 18 + 24 * vertices;
+            let faces = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
+            assert_eq!(
+                super::face_table_sizes(&bytes, at + 4, version, faces),
+                Some((obj.loops.len(), obj.half_edges.len()))
+            );
+            assert_eq!(
+                super::face_table_sizes(&bytes[..bytes.len() - 1], at + 4, version, faces),
+                None
+            );
+        }
     }
 }
