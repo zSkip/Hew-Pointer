@@ -1531,11 +1531,16 @@ pub fn merge_coplanar(
         }
     }
 
+    // The adjacency is done with: free it before the output is built (on a
+    // dense mesh it is the largest structure here).
+    drop((edge_faces, normals, has_holes));
+
     // Bucket faces by cluster root.
     let mut clusters: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     for fi in 0..nf {
         clusters.entry(uf.find(fi)).or_default().push(fi);
     }
+    drop(uf);
 
     let mut out_faces: Vec<Vec<usize>> = Vec::with_capacity(nf);
     let mut out_mats: Vec<u32> = Vec::new();
@@ -1842,6 +1847,7 @@ fn heal(
 
     // 2. Weld.
     let (unique_positions, old_to_new) = weld_with_tol(&transformed, weld_tol);
+    drop(transformed);
     let (remapped_faces, remapped_mats, remapped_uvs, remapped_holes) = remap_faces(
         &valid_faces,
         &valid_mats,
@@ -1849,6 +1855,10 @@ fn heal(
         &valid_holes,
         &old_to_new,
     );
+    // Each step's inputs are dropped once the next step has its outputs: a
+    // dense mesh's face lists cost about 100 bytes per triangle per step,
+    // and holding every step's set until the end held ten of them at once.
+    drop((valid_faces, valid_mats, valid_uvs, valid_holes, old_to_new));
 
     // 3. Drop zero-area faces (collinear T-junction slivers from SketchUp).
     //    The sliver gate is on effective height at `weld_tol` — the source's
@@ -1864,18 +1874,26 @@ fn heal(
             &unique_positions,
             weld_tol,
         );
+    drop((remapped_faces, remapped_mats, remapped_uvs, remapped_holes));
 
     // Steps 4–5b repair a foreign mesh; one Hew wrote (`repair` off) is
     // already what Hew built and only has a closed shell turned outward
     // (step 6: a no-op on Hew's own solids, which are always outward).
     let (oriented_faces, oriented_mats, oriented_uvs, oriented_holes) = if !repair {
-        orient_outward(
+        let oriented = orient_outward(
             &nondegenerate_faces,
             &nondegenerate_mats,
             &nondegenerate_uvs,
             &nondegenerate_holes,
             &unique_positions,
-        )
+        );
+        drop((
+            nondegenerate_faces,
+            nondegenerate_mats,
+            nondegenerate_uvs,
+            nondegenerate_holes,
+        ));
+        oriented
     } else {
         // 4. Two-sided dedup.
         let (dedup_faces, dedup_mats, dedup_uvs, dedup_holes) = dedup_two_sided(
@@ -1884,6 +1902,12 @@ fn heal(
             &nondegenerate_uvs,
             &nondegenerate_holes,
         );
+        drop((
+            nondegenerate_faces,
+            nondegenerate_mats,
+            nondegenerate_uvs,
+            nondegenerate_holes,
+        ));
 
         // 5. T-junction healing: splice mid-edge vertices into the faces whose edges
         //    they sit on, so half-edges pair up manifold (SketchUp triangulation
@@ -1900,6 +1924,7 @@ fn heal(
             &unique_positions,
             weld_tol,
         );
+        drop((dedup_faces, dedup_mats, dedup_uvs, dedup_holes));
 
         // 5b. Consistent orientation: flood-fill so adjacent faces agree across every
         //    manifold edge. SketchUp occasionally reverses a subset of a shell's
@@ -1908,20 +1933,29 @@ fn heal(
         //    skipped. Non-manifold meshes are left inconsistent (still skipped).
         //    Hole loops are first wound against their outer loops, so a face and
         //    the wall through its hole agree on the shared edge's direction.
-        let split_holes = normalize_hole_winding(&split_faces, &split_holes, &unique_positions);
+        let wound_holes = normalize_hole_winding(&split_faces, &split_holes, &unique_positions);
+        drop(split_holes);
         let (consistent_faces, consistent_mats, consistent_uvs, consistent_holes) =
-            orient_consistent(&split_faces, &split_mats, &split_uvs, &split_holes);
+            orient_consistent(&split_faces, &split_mats, &split_uvs, &wound_holes);
+        drop((split_faces, split_mats, split_uvs, wound_holes));
 
         // 6. Orientation: flip a closed, inside-out shell to outward normals (some
         //    SketchUp source faces are reversed — invisible there, transparent +
         //    non-pushable here). Hole loops are reversed together with the outer.
-        orient_outward(
+        let oriented = orient_outward(
             &consistent_faces,
             &consistent_mats,
             &consistent_uvs,
             &consistent_holes,
             &unique_positions,
-        )
+        );
+        drop((
+            consistent_faces,
+            consistent_mats,
+            consistent_uvs,
+            consistent_holes,
+        ));
+        oriented
     };
 
     // 7. Coplanar merge: COLLADA always triangulates, so a flat SketchUp face
@@ -1931,14 +1965,18 @@ fn heal(
     //    a group that wouldn't form a clean simple-loop polygon is left as-is.
     //    Faces with holes are never merged — they stay as singletons.
     let (merged_faces, merged_mats, merged_uvs, merged_holes) = match merge_plane_tol {
-        Some(tol) => merge_coplanar(
-            &oriented_faces,
-            &oriented_mats,
-            &oriented_uvs,
-            &oriented_holes,
-            &unique_positions,
-            tol,
-        ),
+        Some(tol) => {
+            let merged = merge_coplanar(
+                &oriented_faces,
+                &oriented_mats,
+                &oriented_uvs,
+                &oriented_holes,
+                &unique_positions,
+                tol,
+            );
+            drop((oriented_faces, oriented_mats, oriented_uvs, oriented_holes));
+            merged
+        }
         None => (oriented_faces, oriented_mats, oriented_uvs, oriented_holes),
     };
 
@@ -1974,19 +2012,21 @@ fn heal(
         &unique_positions,
     );
     let dropped_degenerate = merged_faces.len() - final_faces.len();
+    drop((merged_faces, merged_mats, merged_uvs, merged_holes));
 
     // 7b. Normalize hole winding so every inner loop winds OPPOSITE its outer
     //    loop (Hew's native convention; see `Object::from_faces_with_holes`).
     //    COLLADA does not guarantee `<h>` winding, and the ear-clipping
     //    tessellator's hole bridging fills/garbles a hole wound with the outer.
-    let final_holes = normalize_hole_winding(&final_faces, &final_holes, &unique_positions);
+    let wound_holes = normalize_hole_winding(&final_faces, &final_holes, &unique_positions);
+    drop(final_holes);
 
     // 8. Compact: drop positions referenced by no surviving face (the shared
     //    <vertices> source includes edge-only / hole-only vertices that
     //    `from_polygons` would reject). Runs last so the final face set defines
     //    what's referenced. Hole vertices are counted as referenced.
     let (compact_positions, compact_faces, compact_holes) =
-        compact_unused(&unique_positions, &final_faces, &final_holes);
+        compact_unused(&unique_positions, &final_faces, &wound_holes);
 
     (
         compact_positions,

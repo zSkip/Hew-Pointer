@@ -147,13 +147,21 @@ pub fn build_scene(
     name_hint: Option<&str>,
 ) -> (ImportScene, Vec<String>) {
     let mut warnings = Vec::new();
+    let RawTriangles {
+        positions: raw_positions,
+        faces: raw_faces,
+    } = raw;
+
+    // Each step's inputs are dropped as soon as the next step has its
+    // outputs: on a dense mesh every one of these arrays is tens of bytes
+    // per triangle, and the per-shell heal below needs none of them.
 
     // 1. Scale to meters. STL carries no units; the caller (UI) decided.
-    let scaled: Vec<Point3> = raw
-        .positions
+    let scaled: Vec<Point3> = raw_positions
         .iter()
         .map(|p| Point3::new(p.x * unit_scale, p.y * unit_scale, p.z * unit_scale))
         .collect();
+    drop(raw_positions);
 
     // 2. Coarse weld at the f32 tolerance + remap faces. This collapses STL's
     // massive vertex duplication into a shared set and is what discovers
@@ -161,13 +169,15 @@ pub fn build_scene(
     // heal's T-junction stitching would fuse parts that merely touch, so it
     // runs only per already-separated shell in step 4 (see module docs).
     let weld_tol = stl_weld_tol(&scaled);
-    let n = raw.faces.len();
+    let n = raw_faces.len();
     let no_mats = vec![NO_MATERIAL; n];
     let no_uvs: Vec<Vec<[f64; 2]>> = vec![Vec::new(); n];
     let no_holes: Vec<Vec<Vec<usize>>> = vec![Vec::new(); n];
     let (welded, old_to_new) = mesh_heal::weld_with_tol(&scaled, weld_tol);
+    drop(scaled);
     let (faces, face_materials, face_uvs, face_holes) =
-        mesh_heal::remap_faces(&raw.faces, &no_mats, &no_uvs, &no_holes, &old_to_new);
+        mesh_heal::remap_faces(&raw_faces, &no_mats, &no_uvs, &no_holes, &old_to_new);
+    drop((raw_faces, no_mats, no_uvs, no_holes, old_to_new));
     if faces.is_empty() {
         return (empty_scene(), warnings);
     }
@@ -175,6 +185,7 @@ pub fn build_scene(
     // 3. Split into geometrically-disjoint shells (see module docs for why
     // this is not `split_non_manifold`).
     let shells = split_into_shells(&welded, &faces, &face_materials, &face_uvs, &face_holes);
+    drop((welded, faces, face_materials, face_uvs, face_holes));
 
     // 4. Heal each shell (dedup, T-junction stitch, orient outward,
     // coplanar-merge). Heal runs BEFORE the non-manifold split so the split's

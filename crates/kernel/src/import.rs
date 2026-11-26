@@ -72,15 +72,15 @@ impl MeshRecipe {
         &self,
         materials: &[crate::material::FaceMaterial],
     ) -> Result<crate::topo::Object, crate::error::TopologyError> {
-        let frames: Vec<Option<UvFrame>> = (0..self.faces.len())
-            .map(|i| self.face_uv_frames.get(i).copied().flatten())
-            .collect();
+        // A face past the end of `face_uv_frames` gets none: the builder
+        // reads each face's frame with `get`, so the list is passed as it
+        // is rather than padded to one 72-byte entry per face.
         crate::topo::Object::from_polygons_with_holes_import(
             &self.positions,
             &self.faces,
             &self.face_holes,
             materials,
-            &frames,
+            &self.face_uv_frames,
         )
     }
 
