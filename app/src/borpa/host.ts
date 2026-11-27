@@ -5,7 +5,8 @@
  * page script runs, and receives messages through `window.wx.postMessage`.
  * Every message is a JSON string carrying `borpa: 1`. The host's "Send to
  * Prepare" button calls `window.__borpaHew.sendToPlate()`, which answers with
- * a `plate` message (the document as a base64 3MF) or an `error` message.
+ * a `plate` message (the document as a base64 3MF, and which filament preset
+ * each of its materials stands for) or an `error` message.
  * The host also calls `window.__borpaHew.setFilaments(list)` with the
  * filaments of the selected printer (borpa/filaments.ts), after `ready` and
  * whenever its printer or filament presets change.
@@ -40,13 +41,17 @@ export const isBorpa: boolean =
 
 export type BorpaMessage =
   | { type: 'ready' }
-  | { type: 'plate'; name: string; data: string; nonSolid: number }
+  | { type: 'plate'; name: string; data: string; nonSolid: number; filaments: Record<string, string> }
   | { type: 'error'; code: 'not-ready' | 'empty' | 'export-failed'; message: string }
   | { type: 'sim.run'; job: string; study: unknown; geometry: unknown }
   | { type: 'sim.cancel'; job: string }
 
+/**
+ * `filaments` maps each material name in the 3MF (its `<base name>`) to the
+ * filament preset it stands for; the host gives each preset a filament slot.
+ */
 export type PlateExport =
-  | { name: string; bytes: Uint8Array; nonSolid: number }
+  | { name: string; bytes: Uint8Array; nonSolid: number; filaments: Record<string, string> }
   | { code: 'not-ready' | 'empty' }
 
 /** Send one message to the host. */
@@ -78,7 +83,7 @@ export function installBorpaBridge(exportPlate: () => Promise<PlateExport>): () 
       if ('code' in result) {
         postToBorpa({ type: 'error', code: result.code, message: '' })
       } else {
-        postToBorpa({ type: 'plate', name: result.name, data: toBase64(result.bytes), nonSolid: result.nonSolid })
+        postToBorpa({ type: 'plate', name: result.name, data: toBase64(result.bytes), nonSolid: result.nonSolid, filaments: result.filaments })
       }
     } catch (err: unknown) {
       postToBorpa({ type: 'error', code: 'export-failed', message: err instanceof Error ? err.message : String(err) })

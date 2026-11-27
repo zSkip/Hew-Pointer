@@ -176,6 +176,21 @@ export function filamentForLink(link: FilamentLink, list: readonly Filament[]): 
   return list.find((f) => f.name === link.preset) ?? list.find((f) => f.type !== '' && f.type === link.type) ?? null
 }
 
+/**
+ * Send to Prepare's filament map: each linked material's name (the name its
+ * `<base>` carries in the exported 3MF) → the preset of `list` it stands
+ * for, else the preset it was linked to. The host picks filament slots from
+ * it. A name used twice keeps its first material.
+ */
+export function plateFilamentMap(materials: Iterable<{ name: string; link: FilamentLink }>, list: readonly Filament[]): Record<string, string> {
+  const out = new Map<string, string>()
+  for (const { name, link } of materials) {
+    if (name === '' || out.has(name)) continue
+    out.set(name, filamentForLink(link, list)?.name ?? link.preset)
+  }
+  return Object.fromEntries(out)
+}
+
 interface Command {
   method: string
   as?: string

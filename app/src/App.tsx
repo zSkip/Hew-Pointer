@@ -176,7 +176,7 @@ import { layoutGlyphRun } from './text/glyphRun'
 import { collectNonSolidObjects } from './io/solidGating'
 import { installBorpaBridge, isBorpa } from './borpa/host'
 import { documentBytesFromFile, makeBorpaFileHost } from './borpa/documentPackage'
-import { assignFilament, filamentForLink, readFilamentLinks } from './borpa/buildMaterial'
+import { assignFilament, filamentForLink, plateFilamentMap, readFilamentLinks } from './borpa/buildMaterial'
 import { ASSIGN_FILAMENT_LABEL, flattenDocument, withBuildFilament } from './borpa/filamentScene'
 import { getFilamentState, selectFilament, subscribeFilaments, type Filament } from './borpa/filaments'
 import { getSimBridgeState, subscribeSimBridge } from './borpa/sim/simBridge'
@@ -5137,7 +5137,16 @@ export default function App() {
       const nonSolid = scene !== null ? collectNonSolidObjects(scene).length : 0
       const bytes = await api.export3mf(exportCagesRef.current)
       if (bytes === null) return { code: 'empty' }
-      return { name: documentBaseName(docSessionRef.current), bytes, nonSolid }
+      // Material name → filament preset, for the host's filament slots. A
+      // failed read still sends the model; the host then prints it in slot 1.
+      let filaments: Record<string, string> = {}
+      try {
+        const links = scene !== null ? [...readFilamentLinks(scene)].map(([h, link]) => ({ name: scene.material_info(h)?.name() ?? '', link })) : []
+        filaments = plateFilamentMap(links, getFilamentState().filaments)
+      } catch (err: unknown) {
+        console.warn('Borpa: the filament links could not be read for Send to Prepare', err)
+      }
+      return { name: documentBaseName(docSessionRef.current), bytes, nonSolid, filaments }
     })
   }, [])
 
