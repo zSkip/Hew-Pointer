@@ -38,7 +38,7 @@ use crate::ops::{
 };
 use crate::sketch::CurveGeom;
 use crate::tol;
-use crate::topo::{Face, Loop, LoopKind, Object, WatertightState};
+use crate::topo::{Face, Loop, LoopKind, LoopList, Object, WatertightState};
 
 /// One path a re-trace inserts: boundary point to boundary point, interior
 /// points strictly inside the face, with the circle each edge is a chord
@@ -49,7 +49,7 @@ pub struct RetracePath {
     pub path: Vec<Point3>,
     /// One claim per path edge, or empty.
     pub curves: Vec<Option<CurveGeom>>,
-    /// One regular-polygon claim per path edge ([`crate::topo::Edge::polygon`]),
+    /// One regular-polygon claim per path edge ([`crate::topo::EdgeArcs::polygon`]),
     /// or empty.
     pub polygons: Vec<Option<CurveGeom>>,
     /// One soft mark per path edge ([`crate::topo::Edge::soft`]), or empty
@@ -254,8 +254,8 @@ impl Object {
                     return Err(StickyError::PathNotSimple);
                 }
                 path.push(b);
-                curves.push(edge.curve);
-                polygons.push(edge.polygon);
+                curves.push(self.edge_curve(e));
+                polygons.push(self.edge_polygon(e));
                 soft.push(edge.soft);
                 removed_edges.push(e);
             }
@@ -591,7 +591,7 @@ impl Object {
                 dest.remove(&h);
                 old_face.remove(&h);
             }
-            obj.edges.remove(e);
+            obj.remove_edge(e);
         }
 
         // 4. Insert the paths.
@@ -607,10 +607,10 @@ impl Object {
             }
             for (k, &e) in edges.iter().enumerate() {
                 if let Some(&g) = insert[pi].curves.get(k) {
-                    obj.edges[e].curve = g;
+                    obj.set_edge_curve(e, g);
                 }
                 if let Some(&g) = insert[pi].polygons.get(k) {
-                    obj.edges[e].polygon = g;
+                    obj.set_edge_polygon(e, g);
                 }
                 if let Some(&soft) = insert[pi].soft.get(k) {
                     obj.edges[e].soft = soft;
@@ -802,17 +802,17 @@ impl Object {
             } else {
                 origins.iter().next().copied().unwrap_or(face)
             };
-            let first_surface = obj.faces[survivor].surface;
+            let first_surface = obj.faces[survivor].surface();
             let agree = origins
                 .iter()
-                .all(|&f| obj.faces[f].surface == first_surface);
+                .all(|&f| obj.faces[f].surface() == first_surface);
             let surface = if agree { first_surface } else { None };
             // The blend tag follows the same rule: kept only when every
             // origin face agrees on it.
-            let first_blend = obj.faces[survivor].blend;
+            let first_blend = obj.faces[survivor].blend();
             let blend = origins
                 .iter()
-                .all(|&f| obj.faces[f].blend == first_blend)
+                .all(|&f| obj.faces[f].blend() == first_blend)
                 .then_some(first_blend)
                 .flatten();
             let reuse = reused.insert(survivor);
@@ -833,17 +833,12 @@ impl Object {
             let fid = if reuse {
                 survivor
             } else {
-                let fid = obj.faces.insert(Face {
-                    outer_loop: LoopId::default(),
-                    inner_loops: Vec::new(),
-                    plane: template.plane,
-                    material: template.material,
-                    back_material: template.back_material,
-                    uv_frame: template.uv_frame,
-                    surface: template.surface,
-                    blend: template.blend,
-                    attrs: template.attrs,
-                });
+                let fid = obj.faces.insert(Face::new(
+                    LoopId::default(),
+                    LoopList::new(),
+                    template.plane,
+                    template.attrs(),
+                ));
                 for shell in obj.shells.values_mut() {
                     if shell.faces.contains(&survivor) {
                         shell.faces.push(fid);
@@ -870,14 +865,14 @@ impl Object {
             }
             let f = &mut obj.faces[fid];
             f.outer_loop = outer;
-            f.inner_loops = inner;
+            f.inner_loops = inner.into();
             f.plane = template.plane;
             f.material = template.material;
-            f.back_material = template.back_material;
-            f.uv_frame = template.uv_frame;
-            f.attrs = template.attrs;
-            f.surface = surface;
-            f.blend = blend;
+            f.set_back_material(template.back_material());
+            f.set_uv_frame(template.uv_frame());
+            f.set_attr_slot(template.attr_slot());
+            f.set_surface(surface);
+            f.set_blend(blend);
             result_faces.push(fid);
         }
         for &f in &old_faces {

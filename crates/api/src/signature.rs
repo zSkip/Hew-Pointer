@@ -125,7 +125,7 @@ fn candidate_hashes(
             }
             loops.push(ring);
         }
-        let surface = match (f.surface, pose.similarity_scale()) {
+        let surface = match (f.surface(), pose.similarity_scale()) {
             (Some(kernel::SurfaceRef::Cylinder { axis, radius, .. }), Some(s)) => {
                 Some(WorldSurface::Cylinder(pose.apply_vector(axis), radius * s))
             }
@@ -160,7 +160,7 @@ fn candidate_hashes(
             )),
             _ => None,
         };
-        let blend = f.blend.map(|t| {
+        let blend = f.blend().map(|t| {
             let kind = match t.kind {
                 kernel::BlendKind::Fillet => 0,
                 kernel::BlendKind::Chamfer => 1,
@@ -194,14 +194,13 @@ fn candidate_hashes(
     // written only when present. A pose that is not a similarity cannot
     // carry a circle, so the claims drop there, as a face's surface does.
     let scale = pose.similarity_scale();
-    let edge_claims = |claim: fn(&kernel::topo::Edge) -> Option<kernel::CurveGeom>| {
+    let edge_claims = |claim: fn(&kernel::topo::EdgeArcs) -> Option<kernel::CurveGeom>| {
         let Some(s) = scale else {
             return Vec::new();
         };
-        obj.edges()
-            .iter()
-            .filter_map(|(e, edge)| {
-                let g = claim(edge)?;
+        obj.edge_arc_entries()
+            .filter_map(|(e, arcs)| {
+                let g = claim(&arcs)?;
                 let (a, b) = obj.edge_endpoints(e)?;
                 Some((
                     pose.apply_point(a),

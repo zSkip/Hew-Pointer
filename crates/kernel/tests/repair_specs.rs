@@ -695,7 +695,9 @@ fn a_textured_pane_keeps_its_texture_in_place_on_the_far_side() {
     // corner below or above it mapped.
     let mut caps = 0;
     for face in obj.faces().values() {
-        let Some(frame) = face.uv_frame else { continue };
+        let Some(frame) = face.uv_frame() else {
+            continue;
+        };
         caps += 1;
         for q in obj.loop_positions(face.outer_loop) {
             let flat = Point3::new(q.x, q.y, 0.0);

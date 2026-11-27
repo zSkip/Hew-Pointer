@@ -480,7 +480,7 @@ fn reflection_maps_cylinder_surfaces_and_drops_them_under_anisotropy() {
     let cyl = |o: &Object| {
         o.faces()
             .values()
-            .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+            .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
             .count()
     };
     let (mut doc, id) = build();
@@ -490,7 +490,7 @@ fn reflection_maps_cylinder_surfaces_and_drops_them_under_anisotropy() {
     let o = doc.object(id).unwrap();
     assert_eq!(cyl(o), before);
     for f in o.faces().values() {
-        if let Some(SurfaceRef::Cylinder { radius, .. }) = f.surface {
+        if let Some(SurfaceRef::Cylinder { radius, .. }) = f.surface() {
             assert!((radius - 0.5).abs() < 1e-9);
         }
     }
@@ -536,7 +536,9 @@ fn reflection_mirrors_the_texture_frame() {
     let t = mirror_x();
     doc.transform_object(id, &t).unwrap();
     let o = doc.object(id).unwrap();
-    let f = o.faces()[top].uv_frame.expect("frame survives the mirror");
+    let f = o.faces()[top]
+        .uv_frame()
+        .expect("frame survives the mirror");
     let moved = t.apply_point(corner);
     let (u1, v1) = uv(&f, moved);
     assert!((u0 - u1).abs() < 1e-9 && (v0 - v1).abs() < 1e-9);

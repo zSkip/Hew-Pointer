@@ -233,7 +233,7 @@ fn blend_census(o: &Object) -> Vec<(u32, u8, u8)> {
     let mut v: Vec<(u32, u8, u8)> = o
         .faces()
         .values()
-        .filter_map(|f| f.blend)
+        .filter_map(|f| f.blend())
         .map(|t| (t.id.0, t.kind as u8, t.role as u8))
         .collect();
     v.sort_unstable();
@@ -286,7 +286,7 @@ fn v9_round_trips_every_surface_kind() {
             bytes,
             "{s:?}: save, load, save is byte-identical"
         );
-        let got = back.faces().values().next().unwrap().surface;
+        let got = back.faces().values().next().unwrap().surface();
         assert_eq!(got, Some(s), "the claim comes back equal by ==");
     }
 }
@@ -320,7 +320,7 @@ fn v8_buffers_load_under_v9() {
     let v8 = as_v8(&v9);
     let back = decode(&v8).unwrap();
     assert!(back.edges().values().all(|e| !e.crease));
-    assert!(back.faces().values().all(|f| f.blend.is_none()));
+    assert!(back.faces().values().all(|f| f.blend().is_none()));
     assert_eq!(
         encode(&back),
         v9,
@@ -412,6 +412,20 @@ fn crease_and_blend_tampering_is_rejected() {
     let mut b = clean.clone();
     b[f.blend] = 2;
     assert_eq!(corrupt(&b), "blend flag must be 0 or 1");
+}
+
+/// A face that writes no crease block states "no crease" for each of its
+/// edges, so beside a neighbour that creases their shared edge the two
+/// disagree: the reader refuses it, whichever faces carry blocks.
+#[test]
+fn a_face_without_a_crease_block_disagrees_with_a_creased_neighbour() {
+    let clean = encode(&tagged_creased_box());
+    let (_, faces) = walk(&clean);
+    let f = faces.iter().find(|f| clean[f.crease] == 1).unwrap();
+    let mut b = clean[..f.crease].to_vec();
+    b.push(0);
+    b.extend_from_slice(&clean[f.blend..]);
+    assert_eq!(corrupt(&b), "shared edge has disagreeing crease flags");
 }
 
 #[test]
@@ -714,7 +728,11 @@ fn blend_tag_inherited_by_split_children() {
         .split_face(top, &[p3(0.5, 0.0, 1.0), p3(0.5, 1.0, 1.0)])
         .unwrap();
     o.validate().unwrap();
-    let tagged: Vec<_> = o.faces().values().filter(|f| f.blend == Some(t)).collect();
+    let tagged: Vec<_> = o
+        .faces()
+        .values()
+        .filter(|f| f.blend() == Some(t))
+        .collect();
     assert_eq!(tagged.len(), 2, "both halves of the split carry the tag");
     let _ = report;
     assert_eq!(o.max_blend_id(), Some(BlendId(4)));
@@ -733,9 +751,12 @@ fn ordinary_push_pull_drops_the_tag_of_the_moved_face_only() {
     let top = face_with_normal(&cube, Z);
     cube.push_pull(top, 0.5).unwrap();
     let top_now = face_with_normal(&cube, Z);
-    assert_eq!(cube.faces()[top_now].blend, None);
+    assert_eq!(cube.faces()[top_now].blend(), None);
     assert_eq!(
-        cube.faces().values().filter(|f| f.blend == Some(t)).count(),
+        cube.faces()
+            .values()
+            .filter(|f| f.blend() == Some(t))
+            .count(),
         5
     );
 }
@@ -755,14 +776,22 @@ fn similarity_keeps_tags_and_creases_but_a_stretch_drops_the_tag() {
     scaled
         .apply_transform(&Transform::uniform_scale(2.0))
         .unwrap();
-    assert_eq!(scaled.faces()[f].blend, Some(t), "similarity keeps the tag");
+    assert_eq!(
+        scaled.faces()[f].blend(),
+        Some(t),
+        "similarity keeps the tag"
+    );
     assert_eq!(creased_count(&scaled), 1);
 
     let mut stretched = cube.clone();
     stretched
         .apply_transform(&Transform::scale(Vec3::new(2.0, 1.0, 1.0)))
         .unwrap();
-    assert_eq!(stretched.faces()[f].blend, None, "a stretch drops the tag");
+    assert_eq!(
+        stretched.faces()[f].blend(),
+        None,
+        "a stretch drops the tag"
+    );
     assert_eq!(
         creased_count(&stretched),
         1,

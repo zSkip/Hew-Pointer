@@ -40,6 +40,7 @@ pub mod import;
 pub mod loft;
 pub mod material;
 pub mod math;
+pub mod memory;
 pub mod offset;
 pub mod ops;
 /// The patch primitive and its guards. Crate-internal API; public only so

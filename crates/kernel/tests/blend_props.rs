@@ -134,13 +134,13 @@ fn boolean_after_fillet() {
     let strips: Vec<_> = out
         .faces()
         .values()
-        .filter(|f| f.blend.is_some_and(|t| t.id == id))
+        .filter(|f| f.blend().is_some_and(|t| t.id == id))
         .collect();
     assert_eq!(strips.len(), 12, "each facet split in two");
     assert!(
         strips
             .iter()
-            .all(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+            .all(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
     );
 }
 

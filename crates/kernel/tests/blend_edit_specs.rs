@@ -417,7 +417,7 @@ fn resolve_equal_radii_rolls() {
     assert!(
         rv.faces()
             .values()
-            .any(|f| matches!(f.surface, Some(kernel::SurfaceRef::Sphere { .. })))
+            .any(|f| matches!(f.surface(), Some(kernel::SurfaceRef::Sphere { .. })))
     );
 }
 

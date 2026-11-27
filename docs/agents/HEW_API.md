@@ -1798,6 +1798,11 @@ Semantics notes, normative:
 - `hew.doc.export` returns the exported bytes base64 by default; a
   client may instead pass `path`, honored by hosts with filesystem
   access (`hew-cli`, the desktop shell) and refused typed elsewhere.
+  A mesh export (STL, 3MF, GLB, USDZ) that would need more memory than
+  the host has left refuses `export_too_large` before anything is
+  tessellated, its message naming the triangle count; in the browser
+  kernel, whose memory ends at 4 GiB, that is what a very large model
+  meets instead of the kernel stopping.
   `hew.view.snapshot` follows the same posture: PNG bytes base64 by
   default, or a `path` a filesystem-capable host writes to instead —
   the inline encoding can exceed a client's tool-result budget at any

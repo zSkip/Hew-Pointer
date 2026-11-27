@@ -43,7 +43,7 @@ pub(crate) fn same_side(obj: &Object, f: FaceId, g: FaceId, at: Option<&[EdgeId]
     if f == g || super::chain::coplanar(obj, f, g) {
         return true;
     }
-    let (sf, sg) = (obj.faces()[f].surface, obj.faces()[g].surface);
+    let (sf, sg) = (obj.faces()[f].surface(), obj.faces()[g].surface());
     if let (Some(a), Some(b)) = (sf, sg)
         && a.same_surface(&b)
     {
@@ -106,7 +106,7 @@ fn side_dir(info: &EdgeInfo, side: usize) -> Vec3 {
 
 /// Whether face `f` is a flat side: no claim.
 fn flat(obj: &Object, f: FaceId) -> bool {
-    obj.faces()[f].surface.is_none()
+    obj.faces()[f].surface().is_none()
 }
 
 /// The far end of edge `e` from `v`.
@@ -135,7 +135,7 @@ fn facet_trace(
         return Ok((Trace::ray(side_dir(info, side)), vec![f0]));
     }
     let mut faces: Vec<FaceId> = Vec::new();
-    let claim = obj.faces()[f0].surface.expect("claimed side");
+    let claim = obj.faces()[f0].surface().expect("claimed side");
     let d = info.d_a;
     let (p0, p1) = obj
         .edge_endpoints(info.edge)
@@ -204,7 +204,7 @@ fn facet_trace(
             break;
         }
         let same = obj.faces()[next]
-            .surface
+            .surface()
             .is_some_and(|s| s.same_surface(&claim));
         let (sa, sb) = obj
             .edge_endpoints(seam)
@@ -252,10 +252,10 @@ fn rim_trace(
         };
         return Ok(Trace::ray(dir));
     }
-    let claim = obj.faces()[f].surface.expect("band side");
+    let claim = obj.faces()[f].surface().expect("band side");
     let in_band = |g: FaceId| {
         obj.faces()[g]
-            .surface
+            .surface()
             .is_some_and(|s| s.same_surface(&claim))
             || g == f
     };

@@ -79,6 +79,47 @@ pub struct Edge {
     pub half_edge: HalfEdgeId,
     /// `None` on a boundary edge.
     pub twin_half_edge: Option<HalfEdgeId>,
+    /// SOFT edge (design §7b): the transverse joint between two sweep wall
+    /// facets of one drawn curve — a facet seam of a smooth surface, not a
+    /// real crease. The tessellator smooths shading across it and routes
+    /// its line to the suppressed soft buffer. Marked only at sweep birth
+    /// where the adjacent path bands share one [`CurveGeom`] (never a
+    /// dihedral guess); survives ANY transform that keeps the edge itself
+    /// (`apply_transform` never reads or resets it — not only rigid maps,
+    /// since a swept curve's smooth-shading claim stays true under a
+    /// non-uniform scale too), and survives splitting the edge (a mid-edge
+    /// split is still the same drawn-curve joint on both fragments — unlike
+    /// [`EdgeArcs::curve`], whose chord claim a split genuinely invalidates).
+    /// Dropped only where the edge itself does not survive: booleans
+    /// rebuild edges fresh. A soft edge must be interior (have a twin) —
+    /// pinned by the validator. Persisted in geometry buffer v6.
+    pub soft: bool,
+    /// The user's keep-sharp-under-Smooth mark (true-curves.md §6.1): set by
+    /// the Eraser's Ctrl/Cmd gesture, never derived. Interior only, and never
+    /// together with `soft` (a soft seam cannot crease) — both pinned by the
+    /// validator. Survives splits (both fragments keep it) and every
+    /// transform, similarity or not: a crease is a statement about the edge,
+    /// not about any analytic shape. Dropped where the edge does not survive,
+    /// except that booleans re-derive it by provenance. Persisted in
+    /// geometry buffer v10.
+    pub crease: bool,
+    /// The edge's attribute dictionary ([`Object::edge_attrs`]), or
+    /// [`AttrSlot::NONE`]. Like `soft`, it rides the edge's identity: an
+    /// op that keeps the `EdgeId` keeps it, both fragments of a split edge
+    /// take it, and an edge built from positions (a builder, a boolean, a
+    /// component rebuild) starts without one. Persisted in geometry buffer
+    /// v9.
+    pub attrs: AttrSlot,
+}
+
+/// An edge's circle records ([`Object::edge_arcs`]), held out of line in
+/// the Object's arc table rather than in [`Edge`]: only arc, circle and
+/// polygon edges have one, and keeping them inline cost every edge of a
+/// dense mesh 80 bytes it never used. The table holds an entry only for a
+/// live edge with at least one record (pinned by the validator); an edge
+/// without an entry has neither.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct EdgeArcs {
     /// The analytic circle this edge is a chord facet of, when known — the
     /// solid-side mirror of [`crate::sketch::SketchEdge::curve`] +
     /// [`crate::sketch::CurveGeom`]. Set when an arc/circle is imprinted onto
@@ -99,49 +140,41 @@ pub struct Edge {
     /// `IMPORT_PLANE_DIST` for imported) of `radius` from `center`. Persisted
     /// in geometry buffer v5.
     pub curve: Option<crate::sketch::CurveGeom>,
-    /// SOFT edge (design §7b): the transverse joint between two sweep wall
-    /// facets of one drawn curve — a facet seam of a smooth surface, not a
-    /// real crease. The tessellator smooths shading across it and routes
-    /// its line to the suppressed soft buffer. Marked only at sweep birth
-    /// where the adjacent path bands share one [`CurveGeom`] (never a
-    /// dihedral guess); survives ANY transform that keeps the edge itself
-    /// (`apply_transform` never reads or resets it — not only rigid maps,
-    /// since a swept curve's smooth-shading claim stays true under a
-    /// non-uniform scale too), and survives splitting the edge (a mid-edge
-    /// split is still the same drawn-curve joint on both fragments — unlike
-    /// `curve` above, whose chord claim a split genuinely invalidates).
-    /// Dropped only where the edge itself does not survive: booleans
-    /// rebuild edges fresh. A soft edge must be interior (have a twin) —
-    /// pinned by the validator. Persisted in geometry buffer v6.
-    pub soft: bool,
     /// The regular polygon this edge is a side (or a piece of a side) of,
     /// when it was drawn as one: the polygon's circumcircle. The sides ARE
     /// the geometry, so no analytic consumer reads it (no surface, rim, or
     /// smoothing comes of it); the drafting engine lifts marked edges back
     /// into one polygon chain, so a polygon drawn on a face selects as one
-    /// and offers its center, exactly as on the ground. Like `soft`, it
+    /// and offers its center, exactly as on the ground. Like [`Edge::soft`], it
     /// survives a split (a piece of a side is still that polygon's) and is
     /// dropped only where the edge does not survive (booleans rebuild edges
-    /// fresh); like `curve`, it maps under a similarity and is dropped under
+    /// fresh); like [`EdgeArcs::curve`], it maps under a similarity and is dropped under
     /// any other transform (a stretched polygon is no longer regular).
     /// Persisted in geometry buffer v7.
     pub polygon: Option<crate::sketch::CurveGeom>,
-    /// The user's keep-sharp-under-Smooth mark (true-curves.md §6.1): set by
-    /// the Eraser's Ctrl/Cmd gesture, never derived. Interior only, and never
-    /// together with `soft` (a soft seam cannot crease) — both pinned by the
-    /// validator. Survives splits (both fragments keep it) and every
-    /// transform, similarity or not: a crease is a statement about the edge,
-    /// not about any analytic shape. Dropped where the edge does not survive,
-    /// except that booleans re-derive it by provenance. Persisted in
-    /// geometry buffer v10.
-    pub crease: bool,
-    /// The edge's attribute dictionary ([`Object::edge_attrs`]), or
-    /// [`AttrSlot::NONE`]. Like `soft`, it rides the edge's identity: an
-    /// op that keeps the `EdgeId` keeps it, both fragments of a split edge
-    /// take it, and an edge built from positions (a builder, a boolean, a
-    /// component rebuild) starts without one. Persisted in geometry buffer
-    /// v9.
-    pub attrs: AttrSlot,
+}
+
+impl EdgeArcs {
+    /// Whether the edge has neither record.
+    pub fn is_empty(&self) -> bool {
+        self.curve.is_none() && self.polygon.is_none()
+    }
+
+    /// Whether `self` and `other` hold the same records bit for bit (so
+    /// `-0.0` and `0.0` differ, as they do in a saved file).
+    fn same_bits(&self, other: &EdgeArcs) -> bool {
+        fn bits(g: Option<crate::sketch::CurveGeom>) -> Option<[u64; 4]> {
+            g.map(|g| {
+                [
+                    g.center.x.to_bits(),
+                    g.center.y.to_bits(),
+                    g.center.z.to_bits(),
+                    g.radius.to_bits(),
+                ]
+            })
+        }
+        bits(self.curve) == bits(other.curve) && bits(self.polygon) == bits(other.polygon)
+    }
 }
 
 /// Whether a loop is a face's outer boundary or a hole.
@@ -392,13 +425,138 @@ pub struct FaceAttrs {
     pub attrs: AttrSlot,
 }
 
+impl Default for FaceAttrs {
+    /// No attributes: default material, nothing else set.
+    fn default() -> Self {
+        FaceAttrs {
+            material: None,
+            back_material: None,
+            uv_frame: None,
+            surface: None,
+            blend: None,
+            attrs: AttrSlot::NONE,
+        }
+    }
+}
+
+/// A face's hole boundaries ([`Face::inner_loops`]): a list of loop
+/// handles that takes one pointer while empty, which almost every face is
+/// (a triangle of an imported mesh never has a hole). Reads like a slice;
+/// writes go through [`LoopList::push`], [`LoopList::retain`] and
+/// [`LoopList::clear`], which keep the order a `Vec` would.
+#[derive(Clone, Default, PartialEq, Eq)]
+// The box is the point: `Option<Box<Vec>>` is one pointer on the face, where
+// a `Vec` would be three on every face of a dense mesh, nearly all empty.
+#[allow(clippy::box_collection)]
+pub struct LoopList(Option<Box<Vec<LoopId>>>);
+
+impl LoopList {
+    /// An empty list (no allocation).
+    pub const fn new() -> Self {
+        LoopList(None)
+    }
+
+    /// Appends a loop.
+    pub fn push(&mut self, l: LoopId) {
+        self.0.get_or_insert_with(Box::default).push(l);
+    }
+
+    /// Keeps only the loops `keep` accepts, in order.
+    pub fn retain(&mut self, keep: impl FnMut(&LoopId) -> bool) {
+        if let Some(v) = &mut self.0 {
+            v.retain(keep);
+            if v.is_empty() {
+                self.0 = None;
+            }
+        }
+    }
+
+    /// Removes every loop.
+    pub fn clear(&mut self) {
+        self.0 = None;
+    }
+}
+
+impl std::ops::Deref for LoopList {
+    type Target = [LoopId];
+    fn deref(&self) -> &[LoopId] {
+        self.0.as_deref().map_or(&[], Vec::as_slice)
+    }
+}
+
+impl std::fmt::Debug for LoopList {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl From<Vec<LoopId>> for LoopList {
+    fn from(v: Vec<LoopId>) -> Self {
+        if v.is_empty() {
+            LoopList(None)
+        } else {
+            LoopList(Some(Box::new(v)))
+        }
+    }
+}
+
+impl FromIterator<LoopId> for LoopList {
+    fn from_iter<I: IntoIterator<Item = LoopId>>(iter: I) -> Self {
+        LoopList::from(iter.into_iter().collect::<Vec<_>>())
+    }
+}
+
+impl IntoIterator for LoopList {
+    type Item = LoopId;
+    type IntoIter = std::vec::IntoIter<LoopId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.map(|v| *v).unwrap_or_default().into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a LoopList {
+    type Item = &'a LoopId;
+    type IntoIter = std::slice::Iter<'a, LoopId>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
+    }
+}
+
+/// The face fields almost no face sets, kept out of line so a plain face
+/// pays one pointer for all of them (see [`Face`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct FaceExtra {
+    back_material: FaceMaterial,
+    uv_frame: Option<UvFrame>,
+    surface: Option<SurfaceRef>,
+    blend: Option<BlendTag>,
+    attr_slot: AttrSlot,
+}
+
+impl FaceExtra {
+    const NONE: FaceExtra = FaceExtra {
+        back_material: None,
+        uv_frame: None,
+        surface: None,
+        blend: None,
+        attr_slot: AttrSlot::NONE,
+    };
+}
+
 /// A planar polygonal face; holes are represented as inner loops.
+///
+/// The fields most faces leave unset (back material, UV frame, surface
+/// reference, blend tag, attribute dictionary) live in one optional box,
+/// read through [`Face::back_material`], [`Face::uv_frame`],
+/// [`Face::surface`], [`Face::blend`] and [`Face::attr_slot`] and written
+/// through the matching `set_*`; the box exists only while one of them is
+/// set. This keeps a face of a dense imported mesh small.
 #[derive(Debug, Clone)]
 pub struct Face {
     /// The outer boundary.
     pub outer_loop: LoopId,
-    /// Hole boundaries (empty in M0; the builder does not create holes yet).
-    pub inner_loops: Vec<LoopId>,
+    /// Hole boundaries.
+    pub inner_loops: LoopList,
     /// The supporting plane, oriented so the outer loop winds CCW seen from
     /// the normal side.
     pub plane: Plane,
@@ -408,23 +566,96 @@ pub struct Face {
     /// boolean's result faces inherit their source face's; freshly extruded
     /// side walls default to `None`.
     pub material: FaceMaterial,
+    /// The rarely set fields; `None` while all of them are unset.
+    extra: Option<Box<FaceExtra>>,
+}
+
+impl Face {
+    /// A face with the given boundary, plane and attributes.
+    pub fn new(outer_loop: LoopId, inner_loops: LoopList, plane: Plane, attrs: FaceAttrs) -> Self {
+        let mut f = Face {
+            outer_loop,
+            inner_loops,
+            plane,
+            material: None,
+            extra: None,
+        };
+        f.set_attrs(attrs);
+        f
+    }
+
+    /// The bytes this face holds outside its table slot: the rare-field
+    /// box and the hole list (zero for a plain face without holes).
+    pub(crate) fn heap_bytes(&self) -> usize {
+        let extra = self
+            .extra
+            .as_ref()
+            .map_or(0, |_| std::mem::size_of::<FaceExtra>());
+        let holes = self.inner_loops.0.as_ref().map_or(0, |v| {
+            std::mem::size_of::<Vec<LoopId>>() + v.capacity() * std::mem::size_of::<LoopId>()
+        });
+        extra + holes
+    }
+
+    fn extra(&self) -> &FaceExtra {
+        self.extra.as_deref().unwrap_or(&FaceExtra::NONE)
+    }
+
+    /// Applies `edit` to the rare fields, allocating the box when one
+    /// becomes set and freeing it when all are unset again.
+    fn update_extra(&mut self, edit: impl FnOnce(&mut FaceExtra)) {
+        let mut e = *self.extra();
+        edit(&mut e);
+        if e == FaceExtra::NONE {
+            self.extra = None;
+        } else if let Some(b) = &mut self.extra {
+            **b = e;
+        } else {
+            self.extra = Some(Box::new(e));
+        }
+    }
+
     /// The paint on the face's back side, or `None` when the back shows
     /// what the front shows (every face Hew itself makes). A `.skp` face
     /// can be painted on each side; its back paint is drawn only where the
     /// back can be seen (an open shell, a cut). Carried with `material`:
     /// a split's children and a boolean's result faces take their
     /// parent's or source face's.
-    pub back_material: FaceMaterial,
+    pub fn back_material(&self) -> FaceMaterial {
+        self.extra().back_material
+    }
+
+    /// Sets [`Face::back_material`].
+    pub fn set_back_material(&mut self, m: FaceMaterial) {
+        self.update_extra(|e| e.back_material = m);
+    }
+
     /// Per-face affine UV frame (ARCHITECTURE.md extension). When `Some`, the
     /// tessellator uses `frame.apply(p)` instead of the  `world_size`
     /// planar projection. Propagated alongside `material` in face-creating ops
     /// (split children and boolean result faces inherit the parent/source frame;
     /// freshly extruded side walls default to `None`).
-    pub uv_frame: Option<UvFrame>,
+    pub fn uv_frame(&self) -> Option<UvFrame> {
+        self.extra().uv_frame
+    }
+
+    /// Sets [`Face::uv_frame`].
+    pub fn set_uv_frame(&mut self, f: Option<UvFrame>) {
+        self.update_extra(|e| e.uv_frame = f);
+    }
+
     /// The analytic surface this face is a chord facet of, when known (an
     /// extruded arc/circle side wall). See [`SurfaceRef`] for the
     /// propagation (map-or-drop) contract. Persisted in geometry buffer v4.
-    pub surface: Option<SurfaceRef>,
+    pub fn surface(&self) -> Option<SurfaceRef> {
+        self.extra().surface
+    }
+
+    /// Sets [`Face::surface`].
+    pub fn set_surface(&mut self, s: Option<SurfaceRef>) {
+        self.update_extra(|e| e.surface = s);
+    }
+
     /// The blend this face belongs to, when the blend engine made it
     /// ([`BlendTag`]). Contract, in step with `surface`:
     /// - split and boolean sub-faces inherit it;
@@ -436,38 +667,57 @@ pub struct Face {
     ///   two blends never share an id on the result.
     ///
     /// Persisted in geometry buffer v10.
-    pub blend: Option<BlendTag>,
+    pub fn blend(&self) -> Option<BlendTag> {
+        self.extra().blend
+    }
+
+    /// Sets [`Face::blend`].
+    pub fn set_blend(&mut self, b: Option<BlendTag>) {
+        self.update_extra(|e| e.blend = b);
+    }
+
     /// The face's attribute dictionary ([`Object::face_attrs`]), or
     /// [`AttrSlot::NONE`]. A face built from an existing one (a split
     /// fragment, an imprint, a boolean result face, a thickened copy)
     /// takes its source's; a face built with no source (extrusion and boss
     /// walls, caps) has none. A merge keeps the survivor's. Persisted in
     /// geometry buffer v9.
-    pub attrs: AttrSlot,
-}
+    pub fn attr_slot(&self) -> AttrSlot {
+        self.extra().attr_slot
+    }
 
-impl Face {
+    /// Sets [`Face::attr_slot`].
+    pub fn set_attr_slot(&mut self, s: AttrSlot) {
+        self.update_extra(|e| e.attr_slot = s);
+    }
+
     /// This face's restorable attribute state (see [`FaceAttrs`]).
     pub fn attrs(&self) -> FaceAttrs {
+        let e = self.extra();
         FaceAttrs {
             material: self.material,
-            back_material: self.back_material,
-            uv_frame: self.uv_frame,
-            surface: self.surface,
-            blend: self.blend,
-            attrs: self.attrs,
+            back_material: e.back_material,
+            uv_frame: e.uv_frame,
+            surface: e.surface,
+            blend: e.blend,
+            attrs: e.attr_slot,
         }
     }
 
     /// Overwrites this face's restorable attribute state (undo's restore
-    /// path; forward ops derive attributes through their own rules instead).
-    pub(crate) fn set_attrs(&mut self, attrs: FaceAttrs) {
+    /// path and [`Face::new`]; forward ops derive attributes through their
+    /// own rules instead).
+    pub fn set_attrs(&mut self, attrs: FaceAttrs) {
         self.material = attrs.material;
-        self.back_material = attrs.back_material;
-        self.uv_frame = attrs.uv_frame;
-        self.surface = attrs.surface;
-        self.blend = attrs.blend;
-        self.attrs = attrs.attrs;
+        self.update_extra(|e| {
+            *e = FaceExtra {
+                back_material: attrs.back_material,
+                uv_frame: attrs.uv_frame,
+                surface: attrs.surface,
+                blend: attrs.blend,
+                attr_slot: attrs.attrs,
+            }
+        });
     }
 }
 
@@ -497,6 +747,15 @@ pub struct Object {
     pub(crate) vertices: Shared<SlotMap<VertexId, Vertex>>,
     pub(crate) half_edges: Shared<SlotMap<HalfEdgeId, HalfEdge>>,
     pub(crate) edges: Shared<SlotMap<EdgeId, Edge>>,
+    /// The circle records of the edges that have any ([`EdgeArcs`]), by
+    /// edge: an entry per live edge with a record, none for any other.
+    /// Sparse, since most edges have none; ordered by id, so a walk visits
+    /// edges in slot order. Copy-on-write like the element tables. Read
+    /// through [`Object::edge_curve`] / [`Object::edge_polygon`], written
+    /// through [`Object::set_edge_curve`] / [`Object::set_edge_polygon`] /
+    /// [`Object::set_edge_arcs`], and cleared with the edge by
+    /// [`Object::remove_edge`].
+    pub(crate) edge_arcs: Shared<BTreeMap<EdgeId, EdgeArcs>>,
     pub(crate) loops: Shared<SlotMap<LoopId, Loop>>,
     pub(crate) faces: Shared<SlotMap<FaceId, Face>>,
     pub(crate) shells: Shared<SlotMap<ShellId, Shell>>,
@@ -543,6 +802,7 @@ pub(crate) struct ObjectStamp {
     vertices: Watch<SlotMap<VertexId, Vertex>>,
     half_edges: Watch<SlotMap<HalfEdgeId, HalfEdge>>,
     edges: Watch<SlotMap<EdgeId, Edge>>,
+    edge_arcs: Watch<BTreeMap<EdgeId, EdgeArcs>>,
     loops: Watch<SlotMap<LoopId, Loop>>,
     faces: Watch<SlotMap<FaceId, Face>>,
     shells: Watch<SlotMap<ShellId, Shell>>,
@@ -562,6 +822,7 @@ impl Object {
             vertices,
             half_edges,
             edges,
+            edge_arcs,
             loops,
             faces,
             shells,
@@ -575,6 +836,7 @@ impl Object {
             vertices: vertices.watch(),
             half_edges: half_edges.watch(),
             edges: edges.watch(),
+            edge_arcs: edge_arcs.watch(),
             loops: loops.watch(),
             faces: faces.watch(),
             shells: shells.watch(),
@@ -593,6 +855,7 @@ impl Object {
             vertices,
             half_edges,
             edges,
+            edge_arcs,
             loops,
             faces,
             shells,
@@ -605,6 +868,7 @@ impl Object {
         vertices.is_watched_by(&stamp.vertices)
             && half_edges.is_watched_by(&stamp.half_edges)
             && edges.is_watched_by(&stamp.edges)
+            && edge_arcs.is_watched_by(&stamp.edge_arcs)
             && loops.is_watched_by(&stamp.loops)
             && faces.is_watched_by(&stamp.faces)
             && shells.is_watched_by(&stamp.shells)
@@ -624,6 +888,7 @@ impl Object {
             vertices: Shared::new(SlotMap::with_key()),
             half_edges: Shared::new(SlotMap::with_key()),
             edges: Shared::new(SlotMap::with_key()),
+            edge_arcs: Shared::new(BTreeMap::new()),
             loops: Shared::new(SlotMap::with_key()),
             faces: Shared::new(SlotMap::with_key()),
             shells: Shared::new(SlotMap::with_key()),
@@ -640,19 +905,24 @@ impl Object {
     /// ([`crate::shared`]). Capacity-based and O(1) per table except the
     /// shells' face lists (a handful of shells per object), so a dense
     /// mesh costs nothing extra to measure.
-    pub(crate) fn table_footprints(&self) -> [(usize, usize); 6] {
+    pub(crate) fn table_footprints(&self) -> [(usize, usize); 7] {
         use crate::shared::slotmap_heap_bytes as table;
         let shell_lists: usize = self
             .shells
             .values()
             .map(|s| s.faces.capacity() * std::mem::size_of::<FaceId>())
             .sum();
+        let face_heap: usize = self.faces.values().map(Face::heap_bytes).sum();
         [
             (self.vertices.addr(), table(&self.vertices)),
             (self.half_edges.addr(), table(&self.half_edges)),
             (self.edges.addr(), table(&self.edges)),
+            (
+                self.edge_arcs.addr(),
+                crate::shared::btree_heap_bytes(&self.edge_arcs),
+            ),
             (self.loops.addr(), table(&self.loops)),
-            (self.faces.addr(), table(&self.faces)),
+            (self.faces.addr(), table(&self.faces) + face_heap),
             (self.shells.addr(), table(&self.shells) + shell_lists),
         ]
     }
@@ -690,6 +960,108 @@ impl Object {
         &self.edges
     }
 
+    /// The circle records of `edge` ([`EdgeArcs`]): empty when it has none
+    /// or is not in this Object.
+    pub fn edge_arcs(&self, edge: EdgeId) -> EdgeArcs {
+        self.edge_arcs.get(&edge).copied().unwrap_or_default()
+    }
+
+    /// The analytic circle `edge` is a chord facet of ([`EdgeArcs::curve`]),
+    /// if it has one.
+    pub fn edge_curve(&self, edge: EdgeId) -> Option<crate::sketch::CurveGeom> {
+        self.edge_arcs.get(&edge).and_then(|a| a.curve)
+    }
+
+    /// The regular polygon `edge` is a side of ([`EdgeArcs::polygon`]), if
+    /// it has one.
+    pub fn edge_polygon(&self, edge: EdgeId) -> Option<crate::sketch::CurveGeom> {
+        self.edge_arcs.get(&edge).and_then(|a| a.polygon)
+    }
+
+    /// Every edge with a circle record, with its records, in slot order.
+    pub fn edge_arc_entries(&self) -> impl Iterator<Item = (EdgeId, EdgeArcs)> + '_ {
+        self.edge_arcs.iter().map(|(&e, &a)| (e, a))
+    }
+
+    /// Gives `edge` exactly the records `arcs` (empty clears them). The
+    /// caller guarantees `edge` is live. Writes the table only when the
+    /// records change, so an edge without records costs no copy of a shared
+    /// table.
+    pub(crate) fn set_edge_arcs(&mut self, edge: EdgeId, arcs: EdgeArcs) {
+        debug_assert!(self.edges.contains_key(edge), "arcs for a dead edge");
+        if self.edge_arcs(edge).same_bits(&arcs) {
+            return;
+        }
+        if arcs.is_empty() {
+            self.edge_arcs.remove(&edge);
+        } else {
+            self.edge_arcs.insert(edge, arcs);
+        }
+    }
+
+    /// Sets `edge`'s [`EdgeArcs::curve`], keeping its polygon record.
+    pub(crate) fn set_edge_curve(&mut self, edge: EdgeId, curve: Option<crate::sketch::CurveGeom>) {
+        let arcs = EdgeArcs {
+            curve,
+            ..self.edge_arcs(edge)
+        };
+        self.set_edge_arcs(edge, arcs);
+    }
+
+    /// Sets `edge`'s [`EdgeArcs::polygon`], keeping its curve record.
+    pub(crate) fn set_edge_polygon(
+        &mut self,
+        edge: EdgeId,
+        polygon: Option<crate::sketch::CurveGeom>,
+    ) {
+        let arcs = EdgeArcs {
+            polygon,
+            ..self.edge_arcs(edge)
+        };
+        self.set_edge_arcs(edge, arcs);
+    }
+
+    /// Replaces every circle record `g` with `map(g)` (curve and polygon
+    /// alike), dropping records that map to `None`. Leaves the table
+    /// untouched (and shared with any snapshot) when it is empty.
+    pub(crate) fn map_edge_arcs(
+        &mut self,
+        map: impl Fn(Option<crate::sketch::CurveGeom>) -> Option<crate::sketch::CurveGeom>,
+    ) {
+        if self.edge_arcs.is_empty() {
+            return;
+        }
+        let mapped: BTreeMap<EdgeId, EdgeArcs> = self
+            .edge_arcs
+            .iter()
+            .map(|(&e, a)| {
+                let arcs = EdgeArcs {
+                    curve: map(a.curve),
+                    polygon: map(a.polygon),
+                };
+                (e, arcs)
+            })
+            .filter(|(_, a)| !a.is_empty())
+            .collect();
+        self.edge_arcs = Shared::new(mapped);
+    }
+
+    /// Inserts `edge` with the circle records `arcs`, returning its id.
+    pub(crate) fn insert_edge(&mut self, edge: Edge, arcs: EdgeArcs) -> EdgeId {
+        let id = self.edges.insert(edge);
+        self.set_edge_arcs(id, arcs);
+        id
+    }
+
+    /// Removes `edge` and its circle records, returning the edge.
+    pub(crate) fn remove_edge(&mut self, edge: EdgeId) -> Option<Edge> {
+        let removed = self.edges.remove(edge)?;
+        if self.edge_arcs.contains_key(&edge) {
+            self.edge_arcs.remove(&edge);
+        }
+        Some(removed)
+    }
+
     /// Loop storage (read-only).
     pub fn loops(&self) -> &SlotMap<LoopId, Loop> {
         &self.loops
@@ -703,6 +1075,15 @@ impl Object {
     /// Shell storage (read-only).
     pub fn shells(&self) -> &SlotMap<ShellId, Shell> {
         &self.shells
+    }
+
+    /// How many triangles the stored faces make, from the table sizes
+    /// alone: a face of `n` corners with holes of `h₁, h₂, …` corners
+    /// triangulates into `n − 2 + Σ(hᵢ + 2)`, so the object makes
+    /// `half-edges + 2·loops − 4·faces`. What a step that tessellates or
+    /// draws every face sizes its memory by ([`crate::memory`]).
+    pub fn triangle_count(&self) -> usize {
+        (self.half_edges.len() + 2 * self.loops.len()).saturating_sub(4 * self.faces.len())
     }
 
     /// Whether this Object currently encloses a volume.
@@ -728,7 +1109,7 @@ impl Object {
     /// The attribute dictionary of `face` (namespace → key → value), or
     /// `None` when the face carries none or is not in this Object.
     pub fn face_attrs(&self, face: FaceId) -> Option<&AttrDict> {
-        self.attr_dict(self.faces.get(face)?.attrs)
+        self.attr_dict(self.faces.get(face)?.attr_slot())
     }
 
     /// The attribute dictionary of `edge`, or `None` when the edge carries
@@ -739,7 +1120,7 @@ impl Object {
 
     /// Whether any live face or edge carries a dictionary.
     pub(crate) fn has_element_attrs(&self) -> bool {
-        self.faces.values().any(|f| !f.attrs.is_none())
+        self.faces.values().any(|f| !f.attr_slot().is_none())
             || self.edges.values().any(|e| !e.attrs.is_none())
     }
 
@@ -761,7 +1142,9 @@ impl Object {
     /// slot it had. The caller guarantees `face` is live.
     pub(crate) fn set_face_attrs(&mut self, face: FaceId, dict: AttrDict) -> AttrSlot {
         let slot = self.intern_attrs(dict);
-        std::mem::replace(&mut self.faces[face].attrs, slot)
+        let old = self.faces[face].attr_slot();
+        self.faces[face].set_attr_slot(slot);
+        old
     }
 
     /// Points `edge` at `dict` (interned; empty = none) and returns the
@@ -776,7 +1159,7 @@ impl Object {
     /// dictionaries keep the seam between them, as differently painted
     /// faces do.
     pub(crate) fn face_attrs_eq(&self, a: FaceId, b: FaceId) -> bool {
-        let (sa, sb) = (self.faces[a].attrs, self.faces[b].attrs);
+        let (sa, sb) = (self.faces[a].attr_slot(), self.faces[b].attr_slot());
         sa == sb || self.attr_dict(sa) == self.attr_dict(sb)
     }
 
@@ -853,7 +1236,7 @@ impl Object {
     pub fn analytic_centers(&self) -> Vec<(Point3, FaceId)> {
         let mut groups: Vec<(SurfaceRef, Point3, FaceId)> = Vec::new();
         for (fid, face) in &self.faces {
-            let Some(s) = face.surface else { continue };
+            let Some(s) = face.surface() else { continue };
             let center = match s {
                 SurfaceRef::Sphere { center, .. } | SurfaceRef::Torus { center, .. } => center,
                 SurfaceRef::Cylinder { .. } | SurfaceRef::Cone { .. } => continue,
@@ -870,7 +1253,7 @@ impl Object {
     pub fn max_blend_id(&self) -> Option<BlendId> {
         self.faces
             .values()
-            .filter_map(|f| f.blend.map(|t| t.id))
+            .filter_map(|f| f.blend().map(|t| t.id))
             .max()
     }
 
@@ -891,7 +1274,7 @@ impl Object {
     #[doc(hidden)]
     pub fn set_face_surface_for_test(&mut self, face: FaceId, surface: Option<SurfaceRef>) {
         if let Some(f) = self.faces.get_mut(face) {
-            f.surface = surface;
+            f.set_surface(surface);
         }
     }
 
@@ -900,7 +1283,7 @@ impl Object {
     #[doc(hidden)]
     pub fn set_face_blend_for_test(&mut self, face: FaceId, blend: Option<BlendTag>) {
         if let Some(f) = self.faces.get_mut(face) {
-            f.blend = blend;
+            f.set_blend(blend);
         }
     }
 
@@ -968,7 +1351,7 @@ impl Object {
         }
         let mut groups: Vec<Group> = Vec::new();
         for (fid, face) in &self.faces {
-            let Some(surface) = face.surface else {
+            let Some(surface) = face.surface() else {
                 continue;
             };
             // Rims come from cylinders only; spheres, tori and cones offer
@@ -1084,7 +1467,7 @@ impl Object {
 
     /// The rim circles of this object's imprinted circle edges: a circle
     /// drawn on a face carries its analytic identity on every loop edge
-    /// ([`Edge::curve`]), and this reports it in the same [`AnalyticRim`]
+    /// ([`EdgeArcs::curve`]), and this reports it in the same [`AnalyticRim`]
     /// shape [`Object::analytic_rims`] uses for cylinder walls, so inference
     /// offers a drawn circle's center, quadrants, and tangents exactly as it
     /// does for a circle sketched on the ground. One rim per distinct claimed
@@ -1101,15 +1484,16 @@ impl Object {
     }
 
     /// The centers of the regular polygons drawn on this object's faces
-    /// (edges carrying [`Edge::polygon`]), once each, with a face one of its
+    /// (edges carrying [`EdgeArcs::polygon`]), once each, with a face one of its
     /// sides bounds — the [`crate::sketch::Sketch::polygon_centers`] of a
     /// face drawing, offered to inference as center snaps.
     pub fn edge_polygon_centers(&self) -> Vec<(Point3, FaceId)> {
         let mut out: Vec<(Point3, FaceId)> = Vec::new();
-        for edge in self.edges.values() {
-            let Some(g) = edge.polygon else {
+        for (&id, arcs) in self.edge_arcs.iter() {
+            let Some(g) = arcs.polygon else {
                 continue;
             };
+            let edge = &self.edges[id];
             if out
                 .iter()
                 .any(|(c, _)| c.approx_eq(g.center, crate::tol::POINT_MERGE))
@@ -1143,10 +1527,11 @@ impl Object {
                 || (a + b).length() < crate::tol::NORMAL_DIRECTION
         };
         let mut groups: Vec<Group> = Vec::new();
-        for (_, edge) in &self.edges {
-            let Some(geom) = edge.curve else {
+        for (&id, arcs) in self.edge_arcs.iter() {
+            let Some(geom) = arcs.curve else {
                 continue;
             };
+            let edge = &self.edges[id];
             let he = &self.half_edges[edge.half_edge];
             // The circle's plane is the adjacent face that CONTAINS its
             // center: both sides of an imprinted circle, the cap (never the
@@ -1367,6 +1752,110 @@ pub(crate) fn merge_angular_intervals(
 }
 
 #[cfg(test)]
+mod record_size_tests {
+    use super::*;
+
+    /// An edge record carries no circle data inline: a dense mesh has
+    /// about one and a half edges per triangle, and the records that only
+    /// arc, circle and polygon edges use live in the Object's arc table.
+    #[test]
+    fn an_edge_record_stays_small() {
+        let size = std::mem::size_of::<Edge>();
+        assert!(size <= 24, "Edge is {size} bytes");
+    }
+
+    /// A face record keeps only what every face has inline; the fields
+    /// almost no face sets sit behind one pointer, and an empty hole list
+    /// is one pointer too.
+    #[test]
+    fn a_face_record_stays_small() {
+        let size = std::mem::size_of::<Face>();
+        assert!(size <= 64, "Face is {size} bytes");
+        assert_eq!(
+            std::mem::size_of::<LoopList>(),
+            std::mem::size_of::<usize>()
+        );
+    }
+
+    fn plain_face() -> Face {
+        let plane = Plane::from_point_normal(Point3::new(0.0, 0.0, 0.0), Vec3::new(0.0, 0.0, 1.0))
+            .expect("unit +Z");
+        Face::new(
+            LoopId::default(),
+            LoopList::new(),
+            plane,
+            FaceAttrs::default(),
+        )
+    }
+
+    /// Each rare field reads back what was set; the box exists only while
+    /// one of them is set, and setting them all back frees it.
+    #[test]
+    fn rare_face_fields_round_trip_and_free_their_box() {
+        let mut f = plain_face();
+        assert!(f.extra.is_none());
+        assert_eq!(f.attrs(), FaceAttrs::default());
+
+        let tag = BlendTag {
+            id: BlendId(7),
+            kind: BlendKind::Fillet,
+            role: BlendRole::Strip,
+        };
+        let surface = SurfaceRef::Cylinder {
+            axis_point: Point3::new(1.0, 2.0, 3.0),
+            axis: Vec3::new(0.0, 0.0, 1.0),
+            radius: 0.5,
+        };
+        f.set_blend(Some(tag));
+        f.set_surface(Some(surface));
+        f.set_attr_slot(AttrSlot(3));
+        assert!(f.extra.is_some());
+        assert_eq!(f.blend(), Some(tag));
+        assert_eq!(f.surface(), Some(surface));
+        assert_eq!(f.attr_slot(), AttrSlot(3));
+        assert_eq!(f.back_material(), None);
+        assert_eq!(f.uv_frame(), None);
+
+        let snapshot = f.attrs();
+        let mut g = plain_face();
+        g.set_attrs(snapshot);
+        assert_eq!(g.attrs(), snapshot);
+
+        f.set_blend(None);
+        f.set_surface(None);
+        assert!(f.extra.is_some(), "the attribute slot is still set");
+        f.set_attr_slot(AttrSlot::NONE);
+        assert!(f.extra.is_none());
+        g.set_attrs(FaceAttrs::default());
+        assert!(g.extra.is_none());
+    }
+
+    /// The hole list keeps a `Vec`'s order through push, retain and clear,
+    /// and frees its storage when emptied.
+    #[test]
+    fn loop_list_behaves_like_a_vec() {
+        let mut keys = SlotMap::<LoopId, ()>::with_key();
+        let ids: Vec<LoopId> = (0..4).map(|_| keys.insert(())).collect();
+        let mut l = LoopList::new();
+        assert!(l.is_empty());
+        for &id in &ids {
+            l.push(id);
+        }
+        assert_eq!(&l[..], &ids[..]);
+        l.retain(|&id| id != ids[1]);
+        assert_eq!(l.to_vec(), vec![ids[0], ids[2], ids[3]]);
+        assert_eq!(l.clone().into_iter().collect::<Vec<_>>(), l.to_vec());
+        assert_eq!(LoopList::from(l.to_vec()), l);
+        l.retain(|_| false);
+        assert!(l.0.is_none());
+        assert_eq!(LoopList::from(Vec::new()), LoopList::new());
+        l.push(ids[0]);
+        l.clear();
+        assert!(l.0.is_none());
+    }
+}
+
+#[cfg(test)]
 mod edge_curve_rim_tests {
     use super::*;
     use crate::math::Point3;
@@ -1427,10 +1916,13 @@ mod edge_curve_rim_tests {
                         || (p.approx_eq(b, 1e-12) && q.approx_eq(a, 1e-12))
                 })
                 .unwrap();
-            obj.edges[e].curve = Some(CurveGeom {
-                center: Point3::new(0.5, 0.0, 1.0),
-                radius: 0.5,
-            });
+            obj.set_edge_curve(
+                e,
+                Some(CurveGeom {
+                    center: Point3::new(0.5, 0.0, 1.0),
+                    radius: 0.5,
+                }),
+            );
             (obj, va, vb, e)
         };
 
@@ -1444,7 +1936,7 @@ mod edge_curve_rim_tests {
         }
         obj.map_translated_edge_curves(&before, &[va, vb].into_iter().collect(), sweep);
         obj.drop_stale_edge_curves();
-        let g = obj.edges[e].curve.expect("a whole-translated chord maps");
+        let g = obj.edge_curve(e).expect("a whole-translated chord maps");
         assert!(g.center.approx_eq(Point3::new(0.5, 0.0, 1.25), 1e-12));
         assert_eq!(g.radius, 0.5);
 
@@ -1454,13 +1946,12 @@ mod edge_curve_rim_tests {
         obj.vertices[va].position = obj.vertices[va].position + sweep;
         obj.map_translated_edge_curves(&before, &[va].into_iter().collect(), sweep);
         assert!(
-            obj.edges[e]
-                .curve
+            obj.edge_curve(e)
                 .is_some_and(|g| g.center.approx_eq(original, 1e-12)),
             "a half-moved chord is not mapped"
         );
         obj.drop_stale_edge_curves();
-        assert!(obj.edges[e].curve.is_none(), "and its stale claim drops");
+        assert!(obj.edge_curve(e).is_none(), "and its stale claim drops");
 
         // Both moved, but not by the sweep: never mapped, then dropped.
         let (mut obj, va, vb, e) = setup();
@@ -1470,7 +1961,7 @@ mod edge_curve_rim_tests {
         }
         obj.map_translated_edge_curves(&before, &[va, vb].into_iter().collect(), sweep);
         obj.drop_stale_edge_curves();
-        assert!(obj.edges[e].curve.is_none(), "an off-sweep move drops");
+        assert!(obj.edge_curve(e).is_none(), "an off-sweep move drops");
 
         // Both endpoints in the moved set but left in place (a wall's bottom
         // edge keeps the moved face's original ids): never mapped, and the
@@ -1480,8 +1971,7 @@ mod edge_curve_rim_tests {
         obj.map_translated_edge_curves(&before, &[va, vb].into_iter().collect(), sweep);
         obj.drop_stale_edge_curves();
         assert!(
-            obj.edges[e]
-                .curve
+            obj.edge_curve(e)
                 .is_some_and(|g| g.center.approx_eq(original, 1e-12)),
             "a stationary edge keeps its original claim"
         );
@@ -1515,8 +2005,8 @@ mod edge_curve_rim_tests {
         };
         let top_front = edge_between(&obj, Point3::new(0.0, 0.0, 1.0), Point3::new(1.0, 0.0, 1.0));
         let side_front = edge_between(&obj, Point3::new(1.0, 0.0, 0.0), Point3::new(1.0, 0.0, 1.0));
-        obj.edges[top_front].curve = Some(g);
-        obj.edges[side_front].curve = Some(g);
+        obj.set_edge_curve(top_front, Some(g));
+        obj.set_edge_curve(side_front, Some(g));
         let rims = obj.edge_curve_rims();
         assert_eq!(rims.len(), 2, "one rim per plane orientation: {rims:?}");
         let along =
@@ -1531,5 +2021,56 @@ mod edge_curve_rim_tests {
         );
         // The walls-supplied form agrees with the self-computed one.
         assert_eq!(obj.edge_curve_rims_with(&obj.analytic_rims()), rims);
+    }
+}
+
+#[cfg(test)]
+mod triangle_count_tests {
+    use super::*;
+    use crate::math::Point3;
+
+    #[test]
+    fn triangle_count_is_what_the_stored_faces_triangulate_into() {
+        let v = |x: f64, y: f64, z: f64| Point3::new(x, y, z);
+        // A cube of quads: two triangles a face.
+        let cube = Object::from_polygons(
+            &[
+                v(0.0, 0.0, 0.0),
+                v(1.0, 0.0, 0.0),
+                v(1.0, 1.0, 0.0),
+                v(0.0, 1.0, 0.0),
+                v(0.0, 0.0, 1.0),
+                v(1.0, 0.0, 1.0),
+                v(1.0, 1.0, 1.0),
+                v(0.0, 1.0, 1.0),
+            ],
+            &[
+                vec![0, 3, 2, 1],
+                vec![4, 5, 6, 7],
+                vec![0, 1, 5, 4],
+                vec![1, 2, 6, 5],
+                vec![2, 3, 7, 6],
+                vec![3, 0, 4, 7],
+            ],
+        )
+        .unwrap();
+        assert_eq!(cube.triangle_count(), 12);
+        // A square with a square hole: the ring between them is 8 triangles.
+        let frame = Object::from_polygons_with_holes_import_for_test(
+            &[
+                v(0.0, 0.0, 0.0),
+                v(3.0, 0.0, 0.0),
+                v(3.0, 3.0, 0.0),
+                v(0.0, 3.0, 0.0),
+                v(1.0, 1.0, 0.0),
+                v(1.0, 2.0, 0.0),
+                v(2.0, 2.0, 0.0),
+                v(2.0, 1.0, 0.0),
+            ],
+            &[vec![0, 1, 2, 3]],
+            &[vec![vec![4, 5, 6, 7]]],
+        )
+        .unwrap();
+        assert_eq!(frame.triangle_count(), 8);
     }
 }

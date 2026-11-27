@@ -64,8 +64,8 @@ fn edge_census(o: &Object) -> BTreeMap<[u64; 6], String> {
                     e.twin_half_edge.is_some(),
                     e.soft,
                     e.crease,
-                    e.curve,
-                    e.polygon
+                    o.edge_curve(id),
+                    o.edge_polygon(id)
                 ),
             )
         })

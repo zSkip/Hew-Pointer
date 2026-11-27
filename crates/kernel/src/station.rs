@@ -562,7 +562,7 @@ pub(crate) fn build_skin(spec: &SkinSpec) -> Result<Object, ShapeError> {
         if claim.holds_on(&ring, &plane, tol::PLANE_DIST)
             && surface::validate_face_claim(&claim, &plane, &ring, tol::PLANE_DIST)
         {
-            obj.faces[fid].surface = Some(claim);
+            obj.faces[fid].set_surface(Some(claim));
         }
     }
     obj.validate().map_err(|_| bad)?;

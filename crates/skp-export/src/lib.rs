@@ -1330,7 +1330,7 @@ impl<'d> Author<'d> {
             BTreeMap::new();
         let surface_of = |h: kernel::HalfEdgeId| {
             let face = obj.loops()[he[h].loop_id].face;
-            obj.faces()[face].surface
+            obj.faces()[face].surface()
         };
         for (eid, e) in obj.edges().iter() {
             let h = he[e.half_edge];
@@ -1351,7 +1351,7 @@ impl<'d> Author<'d> {
             };
             // The circle the edge is a chord of: its own claim, else the
             // rim where a cylinder wall meets a face off that cylinder.
-            let claim = e.curve.or_else(|| match (near, far) {
+            let claim = obj.edge_curve(eid).or_else(|| match (near, far) {
                 (Some(w), other) | (other, Some(w))
                     if !seam && other.is_none_or(|o| !o.same_surface(&w)) =>
                 {
@@ -1423,7 +1423,7 @@ impl<'d> Author<'d> {
                 .map(|&l| ring(run, &mut vi, l))
                 .collect();
             let mut material = self.mat(f.material).or(base);
-            if f.surface.is_some() {
+            if f.surface().is_some() {
                 self.note("curved surfaces are written as smooth facets");
             }
             let n = f.plane.normal();
@@ -1436,7 +1436,7 @@ impl<'d> Author<'d> {
                 .and_then(|id| Some((id, self.doc.materials().get(id)?.texture.as_ref()?)))
                 .and_then(|(id, tex)| {
                     let frame = f
-                        .uv_frame
+                        .uv_frame()
                         .unwrap_or_else(|| planar_frame(n, tex.world_size));
                     let corners: Vec<Point3> = obj
                         .loop_half_edges(f.outer_loop)
@@ -1456,7 +1456,7 @@ impl<'d> Author<'d> {
             // is never seen; an open shell's is, so its faces carry the
             // material (and its placement) on the back too — SketchUp draws
             // an unpainted back in its back-face color.
-            if let Some(back) = f.back_material {
+            if let Some(back) = f.back_material() {
                 let back = self.mat(Some(back));
                 if let Some(face) = run.mesh.faces.last_mut() {
                     face.back_material = back;
@@ -1473,7 +1473,7 @@ impl<'d> Author<'d> {
                 axis_point: p,
                 axis: d,
                 radius,
-            }) = f.surface
+            }) = f.surface()
             {
                 let mut h = HewDict::default();
                 h.set(

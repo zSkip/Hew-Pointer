@@ -518,7 +518,7 @@ export interface DocCloseResult {
 /**
  * `hew.doc.export` (v1) — Export the attached document — STL, 3MF, glTF/GLB, USDZ (solids only), or a SketchUp .skp ("skp", the 2021-and-later container; "skp3" to "skp8", "skp2013" to "skp2020") — bytes base64, or a path on hosts with filesystem access.
  * Tier: Required · Class: solitary · Served: host
- * Refusals: export_failed, host_capability_missing, nothing_to_export, save_failed, unknown_entity, unknown_occurrence, too_many_occurrences
+ * Refusals: export_failed, export_too_large, host_capability_missing, nothing_to_export, save_failed, unknown_entity, unknown_occurrence, too_many_occurrences
  * Preview parameters: cages, from Smooth (`smooth`). A production build refuses them `preview_only`.
  */
 export interface DocExportParams {

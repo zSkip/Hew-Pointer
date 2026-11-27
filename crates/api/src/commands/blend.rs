@@ -563,7 +563,7 @@ fn blend_of(
         .faces()
         .get(f.face)
         .ok_or_else(|| unknown_entity("face"))?;
-    match face.blend {
+    match face.blend() {
         Some(tag) => Ok((f.object, tag.id, tag.kind)),
         None => Err(CmdError::from(kernel::DocumentError::Blend(
             kernel::BlendError::UnknownBlend,

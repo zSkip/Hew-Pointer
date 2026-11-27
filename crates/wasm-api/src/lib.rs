@@ -24,6 +24,14 @@
 mod curves_api;
 mod draft_api;
 mod geo_api;
+#[cfg(target_arch = "wasm32")]
+mod grow_ahead;
+
+/// Grows linear memory in large steps rather than a page per allocation
+/// (see [`grow_ahead`]).
+#[cfg(target_arch = "wasm32")]
+#[global_allocator]
+static ALLOCATOR: grow_ahead::GrowAhead = grow_ahead::GrowAhead;
 mod health;
 mod live;
 mod log;
@@ -1323,15 +1331,32 @@ pub fn read_item_asset(bytes: &[u8], path: &str) -> Result<Vec<u8>, JsError> {
 /// mesh is what `Scene::export("3mf", 0)` writes for that document
 /// (stored facets, non-solids included, no cages); a document with nothing
 /// to mesh still saves. Throws the typed load error (`NotAContainer`,
-/// `Incomplete`, …) when `document_bytes` is not a document, or
-/// `export_failed` when meshing refuses.
+/// `Incomplete`, …) when `document_bytes` is not a document,
+/// `export_failed` when meshing refuses, or `export_too_large` when either
+/// reading the document back or writing the package cannot fit in the
+/// memory left (the caller asked to write a file, so a load that cannot
+/// fit is reported as the write's refusal).
 #[wasm_bindgen]
 pub fn document_to_3mf(document_bytes: &[u8]) -> Result<Vec<u8>, JsError> {
-    let doc =
-        Document::load(document_bytes).map_err(|e: LoadError| JsError::new(&api_err(&e, &e).0))?;
-    mesh_export::export_3mf_with_document(&doc, 0, false, false, document_bytes)
-        .map_err(|e| JsError::new(&format!("{}: {}", e.name(), e.message())))
+    document_to_3mf_core(document_bytes).map_err(|e| JsError::new(&e.0))
 }
+
+/// [`document_to_3mf`] minus the JS-error plumbing.
+fn document_to_3mf_core(document_bytes: &[u8]) -> Result<Vec<u8>, ApiError> {
+    let export_err = |e: mesh_export::ExportError| ApiError::new(e.name(), &e.message());
+    let doc = Document::load(document_bytes).map_err(|e: LoadError| match e {
+        LoadError::TooLarge => export_err(mesh_export::ExportError::TooLarge { triangles: None }),
+        e => api_err(&e, &e),
+    })?;
+    mesh_export::export_3mf_with_document(&doc, 0, false, false, document_bytes).map_err(export_err)
+}
+
+/// What a loaded document's scene holds per triangle on top of the
+/// document ([`Scene::load`]): the inference scene of every visible object
+/// and the caches rebuilt with it. Measured on the production WebAssembly
+/// build (a load into a Scene peaks about 320 bytes a triangle above the
+/// document's own load) with a margin.
+const LOADED_SCENE_BYTES_PER_TRIANGLE: usize = 360;
 
 /// The document bytes a [`document_to_3mf`] package carries, verbatim, or
 /// `undefined` when `bytes` is a 3MF (or any zip) with no editable model
@@ -10097,7 +10122,7 @@ impl Scene {
             .faces()
             .get(fid)
             .ok_or_else(|| stale("UnknownFace", "face"))?;
-        Ok(face.surface.is_some())
+        Ok(face.surface().is_some())
     }
 
     /// A world Object edge's two endpoint positions in world space, as
@@ -11848,7 +11873,7 @@ impl Scene {
         let candidates = std::iter::once(obj.default_material()).chain(
             obj.faces()
                 .iter()
-                .flat_map(|(_, f)| [f.material, f.back_material]),
+                .flat_map(|(_, f)| [f.material, f.back_material()]),
         );
         for m in candidates.flatten() {
             if self.doc.material(m).is_some() && !seen.contains(&m) {
@@ -16349,6 +16374,18 @@ impl Scene {
     fn load_core(&mut self, bytes: &[u8]) -> Result<(), ApiError> {
         self.ensure_not_busy()?;
         let new_doc = Document::load(bytes).map_err(|e: LoadError| api_err(&e, &e))?;
+        // The scene rebuilt below needs room too: refuse before anything
+        // changes, as the load itself does (`TooLarge`).
+        let triangles = new_doc
+            .live_object_ids()
+            .into_iter()
+            .filter_map(|id| new_doc.object(id))
+            .map(kernel::Object::triangle_count)
+            .fold(0usize, usize::saturating_add);
+        let room = triangles.saturating_mul(LOADED_SCENE_BYTES_PER_TRIANGLE);
+        if !kernel::memory::has_room(kernel::memory::Need::new(room, 0)) {
+            return Err(api_err(&LoadError::TooLarge, &LoadError::TooLarge));
+        }
 
         // Swap is committed only after successful parse. The new document's
         // epoch starts above the old one's, so a reader keyed on it never
@@ -23261,7 +23298,7 @@ mod tests {
                 .unwrap()
                 .faces()
                 .values()
-                .filter(|f| matches!(f.surface, Some(kernel::SurfaceRef::Cylinder { .. })))
+                .filter(|f| matches!(f.surface(), Some(kernel::SurfaceRef::Cylinder { .. })))
                 .count()
         };
         let mut scene = Scene::new();
@@ -29583,7 +29620,7 @@ mod tests {
         let obj = doc.object(*o).unwrap();
         assert_eq!(obj.faces().len(), 1, "one face");
         let (fid, face) = obj.faces().iter().next().unwrap();
-        let frame = face.uv_frame.expect("the face is placed by a UV frame");
+        let frame = face.uv_frame().expect("the face is placed by a UV frame");
         let mut corners: Vec<([f64; 3], [f64; 2])> = obj
             .loop_positions(face.outer_loop)
             .map(|p| {
@@ -30899,6 +30936,103 @@ mod imported_mark_tests {
         assert!(
             !scene.sketch_is_imported(sketch),
             "drawing made it the user's"
+        );
+    }
+}
+
+#[cfg(test)]
+mod memory_refusal_tests {
+    use super::*;
+    use kernel::memory::with_limit;
+
+    /// A closed unit cube as binary STL: 12 triangles.
+    fn cube_stl() -> Vec<u8> {
+        let p = |i: usize| -> [f32; 3] {
+            [(i & 1) as f32, ((i >> 1) & 1) as f32, ((i >> 2) & 1) as f32]
+        };
+        // Corners by bits (x, y, z); each face two triangles, CCW from outside.
+        let quads = [
+            [0, 2, 3, 1],
+            [4, 5, 7, 6],
+            [0, 1, 5, 4],
+            [2, 6, 7, 3],
+            [0, 4, 6, 2],
+            [1, 3, 7, 5],
+        ];
+        let mut out = vec![0u8; 80];
+        out.extend_from_slice(&12u32.to_le_bytes());
+        for q in quads {
+            for tri in [[q[0], q[1], q[2]], [q[0], q[2], q[3]]] {
+                out.extend_from_slice(&[0u8; 12]);
+                for v in tri {
+                    for c in p(v) {
+                        out.extend_from_slice(&c.to_le_bytes());
+                    }
+                }
+                out.extend_from_slice(&[0u8; 2]);
+            }
+        }
+        out
+    }
+
+    fn cube_scene() -> Scene {
+        let mut scene = Scene::new();
+        scene
+            .import_stl_core(&cube_stl(), 1.0, Some("cube".into()))
+            .expect("the cube imports");
+        scene
+    }
+
+    /// An STL import that cannot fit refuses with the importer's plain
+    /// message, tagged `STL:` like every STL refusal, and adds nothing.
+    #[test]
+    fn an_stl_import_that_cannot_fit_refuses_and_adds_nothing() {
+        let mut scene = Scene::new();
+        let err = with_limit(0, || scene.import_stl_core(&cube_stl(), 1.0, None))
+            .err()
+            .expect("no room");
+        assert_eq!(
+            err.0,
+            "STL: This STL has 12 triangles, more than there is memory left to import. Reduce it in a mesh tool (decimate it) and import it again."
+        );
+        assert!(scene.object_ids().is_empty());
+    }
+
+    /// A load that cannot fit refuses `TooLarge` and leaves the open
+    /// document as it was.
+    #[test]
+    fn a_load_that_cannot_fit_refuses_too_large_and_keeps_the_document() {
+        let bytes = cube_scene().save();
+        let mut scene = cube_scene();
+        scene.import_stl_core(&cube_stl(), 1.0, None).unwrap();
+        let before = scene.state_hash();
+        let err = with_limit(0, || scene.load_core(&bytes)).expect_err("no room");
+        assert_eq!(
+            err.0,
+            "TooLarge: the document is too large to open in the memory left"
+        );
+        assert_eq!(scene.state_hash(), before);
+        assert_eq!(scene.object_ids().len(), 2);
+        with_limit(usize::MAX, || scene.load_core(&bytes)).expect("fits");
+        assert_eq!(scene.object_ids().len(), 1);
+    }
+
+    /// Save and Send to Prepare: a document that cannot be read back to
+    /// write its 3MF refuses as the write (`export_too_large`), not as an
+    /// open; with room it writes the same package as ever.
+    #[test]
+    fn document_to_3mf_reports_a_load_that_cannot_fit_as_export_too_large() {
+        let bytes = cube_scene().save();
+        let err = with_limit(0, || document_to_3mf_core(&bytes)).expect_err("no room");
+        assert_eq!(
+            err.0,
+            "export_too_large: There isn't enough memory left to write this model. Reduce or split the model and try again."
+        );
+        let package = with_limit(usize::MAX, || document_to_3mf_core(&bytes)).expect("fits");
+        assert_eq!(package, document_to_3mf_core(&bytes).unwrap());
+        assert_eq!(
+            mesh_export::read_embedded_document(&package).unwrap(),
+            bytes
         );
     }
 }

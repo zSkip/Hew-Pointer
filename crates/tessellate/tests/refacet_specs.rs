@@ -201,7 +201,7 @@ fn d_profile_arc_band_refacets_and_preserves_its_seams() {
     let chord_wall = obj
         .faces()
         .values()
-        .find(|f| f.surface.is_none() && f.plane.normal().y < -0.5)
+        .find(|f| f.surface().is_none() && f.plane.normal().y < -0.5)
         .expect("chord wall");
     for p in obj.loop_positions(chord_wall.outer_loop) {
         assert!(contains_point(&soup, p), "anchor {p:?} preserved");
@@ -267,7 +267,7 @@ fn cap_imprint_survives_the_rim_refinement() {
     let top_cap = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_none() && f.plane.normal().z > 0.5)
+        .find(|(_, f)| f.surface().is_none() && f.plane.normal().z > 0.5)
         .map(|(fid, _)| fid)
         .unwrap();
     let d = 0.4;
@@ -301,7 +301,7 @@ fn rim_vertex_with_a_drawn_edge_becomes_an_anchor() {
     let top_cap = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_none() && f.plane.normal().z > 0.5)
+        .find(|(_, f)| f.surface().is_none() && f.plane.normal().z > 0.5)
         .map(|(fid, _)| fid)
         .unwrap();
     // The path endpoints snap to the two opposite rim vertices; read their
@@ -336,7 +336,9 @@ fn refinement_that_would_cross_cap_geometry_demotes_honestly() {
     let top_cap = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_none() && f.plane.normal().z > 0.5 && !f.inner_loops.is_empty())
+        .find(|(_, f)| {
+            f.surface().is_none() && f.plane.normal().z > 0.5 && !f.inner_loops.is_empty()
+        })
         .map(|(fid, _)| fid)
         .unwrap();
     obj.split_face_inner(
@@ -1173,7 +1175,7 @@ fn non_uniformly_scaled_cylinder_seams_stay_in_the_soft_buffer() {
     let mut obj = extrude(&circle_sketch(Point3::new(0.0, 0.0, 0.0), 0.5, 48), 1.0);
     obj.apply_transform(&kernel::Transform::scale(kernel::Vec3::new(2.0, 1.0, 1.0)))
         .unwrap();
-    assert!(obj.faces().values().all(|f| f.surface.is_none()));
+    assert!(obj.faces().values().all(|f| f.surface().is_none()));
     let mesh = tessellate(&obj, &MaterialPalette::default()).unwrap();
     assert_eq!(segments(&mesh.soft_edge_positions).len(), 48);
     assert!(mesh.tangent_edge_positions.is_empty());

@@ -207,21 +207,21 @@ impl Object {
         let Some(f) = self.faces().get(face) else {
             return Vec::new();
         };
-        if let Some(t) = f.blend {
+        if let Some(t) = f.blend() {
             add_chain_work(self.faces().len());
             return self
                 .faces()
                 .iter()
-                .filter(|(_, g)| g.blend.is_some_and(|u| u.id == t.id))
+                .filter(|(_, g)| g.blend().is_some_and(|u| u.id == t.id))
                 .map(|(id, _)| id)
                 .collect();
         }
-        if let Some(s) = f.surface {
+        if let Some(s) = f.surface() {
             add_chain_work(self.faces().len());
             return self
                 .faces()
                 .iter()
-                .filter(|(_, g)| g.surface.is_some_and(|u| u.same_surface(&s)))
+                .filter(|(_, g)| g.surface().is_some_and(|u| u.same_surface(&s)))
                 .map(|(id, _)| id)
                 .collect();
         }
@@ -229,7 +229,7 @@ impl Object {
         let plain = |g: FaceId| {
             self.faces()
                 .get(g)
-                .is_some_and(|x| x.surface.is_none() && x.blend.is_none())
+                .is_some_and(|x| x.surface().is_none() && x.blend().is_none())
         };
         let mut seen: BTreeSet<Tally<FaceId>> = BTreeSet::from([Tally(face)]);
         let mut stack = vec![face];
@@ -331,7 +331,7 @@ impl Object {
             if self
                 .faces()
                 .get(f)
-                .is_some_and(|x| x.blend.is_some() || x.surface.is_none())
+                .is_some_and(|x| x.blend().is_some() || x.surface().is_none())
             {
                 for &g in set.iter() {
                     cache.insert(g, set.clone());
@@ -692,7 +692,7 @@ impl LogicalSide<'_> {
                 add_chain_work(1);
                 obj.faces()
                     .get(*g)
-                    .is_some_and(|x| x.surface.is_some_and(|u| u.same_surface(s)))
+                    .is_some_and(|x| x.surface().is_some_and(|u| u.same_surface(s)))
             }
         }
     }
@@ -731,7 +731,10 @@ impl<'a> ChainQuery<'a> {
         }
         let obj = self.obj;
         let face = obj.faces().get(f);
-        if let Some(s) = face.filter(|x| x.blend.is_none()).and_then(|x| x.surface) {
+        if let Some(s) = face
+            .filter(|x| x.blend().is_none())
+            .and_then(|x| x.surface())
+        {
             let side = LogicalSide::Claimed(obj, s);
             self.sides.insert(Tally(f), side.clone());
             return side;
@@ -742,7 +745,7 @@ impl<'a> ChainQuery<'a> {
                 .map(Tally)
                 .collect::<BTreeSet<_>>(),
         );
-        if face.is_some_and(|x| x.blend.is_some() || x.surface.is_none()) {
+        if face.is_some_and(|x| x.blend().is_some() || x.surface().is_none()) {
             for &g in set.iter() {
                 self.sides.insert(g, LogicalSide::Set(set.clone()));
             }

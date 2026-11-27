@@ -157,7 +157,7 @@ fn group_constraint(
 ) -> Option<(Constraint, Vec3)> {
     let claimed = group
         .iter()
-        .filter_map(|&(f, _)| obj.faces()[f].surface.map(|s| (f, s)))
+        .filter_map(|&(f, _)| obj.faces()[f].surface().map(|s| (f, s)))
         .min_by_key(|&(f, _)| f);
     if let Some((f, surface)) = claimed {
         let plane_n = obj.faces()[f].plane.normal();
@@ -413,7 +413,7 @@ pub(crate) fn offset_vertex_in_plane(
 /// is unclaimed or the offset claim would be degenerate (a radius at or
 /// under `POINT_MERGE`; the caller refuses `WallTooThick`).
 pub(crate) fn offset_claim(obj: &Object, face: FaceId, distance: f64) -> Option<SurfaceRef> {
-    let surface = obj.faces()[face].surface?;
+    let surface = obj.faces()[face].surface()?;
     let s = claim_sign(obj, face, &surface)?;
     let shrink = |r: f64| {
         let r = r - s * distance;

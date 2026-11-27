@@ -17,14 +17,14 @@ use crate::trig;
 
 /// The circle the loop of `face` holding `edge` runs on, as (center, axis,
 /// radius): every edge of the loop a chord of one attributed circle
-/// (`Edge::curve`, as an extrusion's or a coaxial Loft's cap carries), in
+/// (`EdgeArcs::curve`, as an extrusion's or a coaxial Loft's cap carries), in
 /// the face's plane, the axis its normal.
 fn loop_circle(
     obj: &Object,
     face: FaceId,
     edge: crate::ids::EdgeId,
 ) -> Option<(Point3, Vec3, f64)> {
-    let g = obj.edges()[edge].curve?;
+    let g = obj.edge_curve(edge)?;
     let l = obj.face_loops(face).into_iter().find(|&l| {
         obj.loop_half_edges(l)
             .any(|h| obj.half_edges()[h].edge == edge)
@@ -37,7 +37,7 @@ fn loop_circle(
     };
     if !obj
         .loop_half_edges(l)
-        .all(|h| same(obj.edges()[obj.half_edges()[h].edge].curve))
+        .all(|h| same(obj.edge_curve(obj.half_edges()[h].edge)))
     {
         return None;
     }
@@ -107,7 +107,7 @@ impl Object {
         let plain = |f: FaceId| {
             self.faces()
                 .get(f)
-                .is_some_and(|x| x.surface.is_none() && x.blend.is_none())
+                .is_some_and(|x| x.surface().is_none() && x.blend().is_none())
         };
         let mut work: Option<Object> = None;
         let mut made: Vec<SurfaceRef> = Vec::new();
@@ -148,7 +148,7 @@ impl Object {
                     if plain(band)
                         && band_claim(self, band, circle).is_some_and(|c| c.same_surface(&claim))
                     {
-                        obj.faces[band].surface = Some(claim);
+                        obj.faces[band].set_surface(Some(claim));
                     }
                 }
                 made.push(claim);
@@ -167,14 +167,14 @@ pub(crate) fn drop_rim_claims(base: &Object, after: &mut Object, claims: &[Surfa
         .faces()
         .iter()
         .filter(|(id, f)| {
-            f.blend.is_none()
-                && f.surface
+            f.blend().is_none()
+                && f.surface()
                     .is_some_and(|s| claims.iter().any(|c| c.same_surface(&s)))
-                && base.faces().get(*id).is_none_or(|b| b.surface.is_none())
+                && base.faces().get(*id).is_none_or(|b| b.surface().is_none())
         })
         .map(|(id, _)| id)
         .collect();
     for id in ids {
-        after.faces[id].surface = None;
+        after.faces[id].set_surface(None);
     }
 }

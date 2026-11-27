@@ -340,7 +340,7 @@ fn empty_binary_file_is_empty_error() {
     );
     match import(&bytes, 1.0, None) {
         Err(StlError::Empty) => {}
-        Err(StlError::Parse(msg)) => panic!("expected StlError::Empty, got Parse({msg})"),
+        Err(other) => panic!("expected StlError::Empty, got {other:?}"),
         Ok(_) => panic!("expected StlError::Empty, got Ok"),
     }
 }
@@ -350,7 +350,7 @@ fn empty_ascii_file_is_empty_error() {
     let bytes = fixture("empty_ascii.stl");
     match import(&bytes, 1.0, None) {
         Err(StlError::Empty) => {}
-        Err(StlError::Parse(msg)) => panic!("expected StlError::Empty, got Parse({msg})"),
+        Err(other) => panic!("expected StlError::Empty, got {other:?}"),
         Ok(_) => panic!("expected StlError::Empty, got Ok"),
     }
 }
@@ -364,7 +364,7 @@ fn garbage_file_is_parse_error() {
     );
     match import(&bytes, 1.0, None) {
         Err(StlError::Parse(_)) => {}
-        Err(StlError::Empty) => panic!("expected StlError::Parse, got Empty"),
+        Err(other) => panic!("expected StlError::Parse, got {other:?}"),
         Ok(_) => panic!("expected StlError::Parse, got Ok"),
     }
 }
@@ -378,6 +378,61 @@ fn garbage_file_is_parse_error() {
 fn garbage_does_not_produce_a_scene() {
     let bytes = fixture("garbage.stl");
     assert!(import(&bytes, 1.0, None).is_err());
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+/// `triangle_count` reads, without parsing, exactly as many triangles as the
+/// parser does: binary (exact, truncated, trailing junk) and ASCII alike.
+#[test]
+fn triangle_count_matches_what_the_parser_reads() {
+    let mut truncated = fixture("cube_binary.stl");
+    truncated.truncate(truncated.len() - 100);
+    let mut junk = fixture("cube_binary.stl");
+    junk.extend_from_slice(&[0xDE, 0xAD, 0xBE, 0xEF, 0x00, 0x11]);
+    let files = [
+        fixture("cube_binary.stl"),
+        fixture("cube_ascii.stl"),
+        fixture("two_cubes.stl"),
+        fixture("solid_header_binary.stl"),
+        fixture("empty_binary.stl"),
+        fixture("empty_ascii.stl"),
+        truncated,
+        junk,
+    ];
+    for bytes in &files {
+        let (raw, _) = stl_import::parse::parse(bytes).expect("parses");
+        assert_eq!(stl_import::parse::triangle_count(bytes), raw.faces.len());
+    }
+}
+
+/// An import that cannot fit in the memory left refuses `TooLarge` before
+/// parsing, with the triangle count in plain words, instead of ending the
+/// WebAssembly kernel; at exactly its estimate it imports.
+#[test]
+fn import_refuses_too_large_when_memory_is_short() {
+    let bytes = fixture("cube_binary.stl");
+    let need = 12 * stl_import::IMPORT_BYTES_PER_TRIANGLE;
+    let err = kernel::memory::with_limit(need - 1, || import(&bytes, 1.0, None))
+        .err()
+        .expect("no room");
+    assert!(
+        matches!(err, StlError::TooLarge { triangles: 12 }),
+        "{err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "This STL has 12 triangles, more than there is memory left to import. Reduce it in a mesh tool (decimate it) and import it again."
+    );
+    kernel::memory::with_limit(need, || import(&bytes, 1.0, None)).expect("fits");
+    // The count reads in thousands.
+    assert!(
+        StlError::TooLarge {
+            triangles: 6_000_000
+        }
+        .to_string()
+        .starts_with("This STL has 6,000,000 triangles,")
+    );
 }
 
 // ── Truncated / trailing-junk binary (parse lenient fallback) ─────────────────

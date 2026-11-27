@@ -115,14 +115,13 @@ fn soft_edges_rims_and_surfaces_are_adopted_where_they_hold() {
     let obj = only_object(&doc);
     let soft = obj.edges().iter().filter(|(_, e)| e.soft).count();
     let claimed = obj
-        .edges()
-        .iter()
-        .filter(|(_, e)| e.curve.is_some())
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
         .count();
     let walls = obj
         .faces()
         .iter()
-        .filter(|(_, f)| f.surface.is_some())
+        .filter(|(_, f)| f.surface().is_some())
         .count();
     assert_eq!(
         (soft, claimed, walls),
@@ -165,9 +164,9 @@ fn a_claim_the_geometry_contradicts_is_dropped_not_forced() {
     assert!(
         obj.edges()
             .iter()
-            .all(|(_, e)| !e.soft && e.curve.is_none())
+            .all(|(id, e)| !e.soft && obj.edge_curve(id).is_none())
     );
-    assert!(obj.faces().iter().all(|(_, f)| f.surface.is_none()));
+    assert!(obj.faces().iter().all(|(_, f)| f.surface().is_none()));
 }
 
 #[test]
@@ -715,7 +714,7 @@ fn replace_material_undo_restores_a_back_on_a_face_a_split_undo_re_minted() {
         assert_eq!(faces.len(), 1);
         faces[0]
     };
-    let back = |doc: &Document| doc.object(oid).unwrap().faces()[bottom(doc)].back_material;
+    let back = |doc: &Document| doc.object(oid).unwrap().faces()[bottom(doc)].back_material();
     let blue = back(&doc).expect("the import painted the bottom's back");
     let green = doc.add_material(Material::solid("Green", Rgba8::rgba(0, 255, 0, 255)));
 
@@ -778,7 +777,7 @@ fn a_back_painted_face_keeps_its_back_through_save_and_load() {
         let mut v: Vec<_> = obj
             .faces()
             .values()
-            .map(|f| (name(f.material), name(f.back_material)))
+            .map(|f| (name(f.material), name(f.back_material())))
             .collect();
         v.sort();
         v
@@ -889,7 +888,7 @@ fn backs(doc: &Document, o: kernel::ObjectId) -> Vec<Option<String>> {
         .faces()
         .values()
         .map(|f| {
-            f.back_material
+            f.back_material()
                 .and_then(|m| doc.material(m))
                 .map(|m| m.name.clone())
         })

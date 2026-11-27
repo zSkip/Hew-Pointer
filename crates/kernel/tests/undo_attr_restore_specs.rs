@@ -74,10 +74,10 @@ fn undo_of_merge_inner_face_does_not_resurrect_a_dropped_surface() {
     let wall = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(id, _)| id)
         .unwrap();
-    let wall_surface = obj.faces()[wall].surface;
+    let wall_surface = obj.faces()[wall].surface();
     let loop_path = inner_quad(&obj, wall, 0.05);
 
     // Imprint: the sub-face inherits the wall's claim (same chord plane).
@@ -97,7 +97,7 @@ fn undo_of_merge_inner_face_does_not_resurrect_a_dropped_surface() {
         panic!("wrong report kind")
     };
     let sub = r.sub_face;
-    assert_eq!(obj.faces()[sub].surface, wall_surface, "imprint inherits");
+    assert_eq!(obj.faces()[sub].surface(), wall_surface, "imprint inherits");
 
     // Raise: the sub-face leaves its chord plane — the claim drops.
     history
@@ -109,13 +109,17 @@ fn undo_of_merge_inner_face_does_not_resurrect_a_dropped_surface() {
             },
         )
         .unwrap();
-    assert_eq!(obj.faces()[sub].surface, None, "extrude drops the claim");
+    assert_eq!(obj.faces()[sub].surface(), None, "extrude drops the claim");
 
     // Flatten: back on the chord plane, but the drop is one-way.
     history
         .apply(&mut obj, KernelOp::CollapseSubFace { sub_face: sub })
         .unwrap();
-    assert_eq!(obj.faces()[sub].surface, None, "collapse does not restore");
+    assert_eq!(
+        obj.faces()[sub].surface(),
+        None,
+        "collapse does not restore"
+    );
 
     // Dissolve, then undo: the re-created sub-face must carry what the
     // dissolved one carried (surface: None) — not the parent's live claim.
@@ -151,12 +155,12 @@ fn undo_of_merge_inner_face_does_not_resurrect_a_dropped_surface() {
         .map(|(id, _)| id)
         .unwrap();
     assert_eq!(
-        obj.faces()[sub_face].surface,
+        obj.faces()[sub_face].surface(),
         None,
         "undo must not resurrect the dropped analytic claim"
     );
     assert_eq!(
-        obj.faces()[parent].surface,
+        obj.faces()[parent].surface(),
         wall_surface,
         "the parent keeps its own claim"
     );
@@ -377,10 +381,10 @@ fn undo_of_merge_faces_round_trips_wall_attribution() {
     let wall = obj
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(id, _)| id)
         .unwrap();
-    let wall_surface = obj.faces()[wall].surface;
+    let wall_surface = obj.faces()[wall].surface();
 
     // Split the wall horizontally at mid-height: both fragments inherit.
     let ring: Vec<Point3> = obj.loop_positions(obj.faces()[wall].outer_loop).collect();
@@ -411,7 +415,7 @@ fn undo_of_merge_faces_round_trips_wall_attribution() {
         panic!("wrong report kind")
     };
     for f in r.new_faces {
-        assert_eq!(obj.faces()[f].surface, wall_surface, "fragments inherit");
+        assert_eq!(obj.faces()[f].surface(), wall_surface, "fragments inherit");
     }
 
     // Merge back, then undo the merge: both fragments carry the claim again.
@@ -428,7 +432,7 @@ fn undo_of_merge_faces_round_trips_wall_attribution() {
     let attributed = obj
         .faces()
         .values()
-        .filter(|f| f.surface == wall_surface)
+        .filter(|f| f.surface() == wall_surface)
         .count();
     assert_eq!(
         attributed, 9,
@@ -644,7 +648,7 @@ fn undo_of_merge_inner_face_restores_face_and_loop_edge_dictionaries() {
     };
     assert_eq!(
         m.sub_face_attrs.attrs,
-        doc.object(oid).unwrap().faces()[r.sub_face].attrs
+        doc.object(oid).unwrap().faces()[r.sub_face].attr_slot()
     );
     assert_eq!(
         m.edge_attrs.iter().filter(|d| **d == dict("e", 7)).count(),

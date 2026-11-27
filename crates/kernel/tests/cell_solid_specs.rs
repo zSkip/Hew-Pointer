@@ -2091,7 +2091,7 @@ fn a_detached_arc_and_its_chord_keep_the_curve_in_either_order() {
         // Eight fan triangles of the unit circle, each sin(π/8)/2, by 0.5.
         solid(&doc, obj, 2. * trig::sin(std::f64::consts::PI / 8.));
         let o = doc.object(obj).unwrap();
-        let walls: Vec<_> = o.faces().values().filter_map(|f| f.surface).collect();
+        let walls: Vec<_> = o.faces().values().filter_map(|f| f.surface()).collect();
         assert_eq!(
             walls.len(),
             8,

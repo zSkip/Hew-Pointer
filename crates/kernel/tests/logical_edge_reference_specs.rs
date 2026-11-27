@@ -56,7 +56,7 @@ fn ref_logical_edge(obj: &Object, edge: EdgeId, propagate: bool) -> Vec<EdgeId> 
         if obj
             .faces()
             .get(f)
-            .is_some_and(|x| x.blend.is_some() || x.surface.is_none())
+            .is_some_and(|x| x.blend().is_some() || x.surface().is_none())
         {
             for &g in set.iter() {
                 cache.insert(g, set.clone());
@@ -190,7 +190,7 @@ fn ref_picked_edge(obj: &Object, edge: EdgeId, propagate: bool) -> Vec<EdgeId> {
         if obj
             .faces()
             .get(f)
-            .is_some_and(|x| x.blend.is_some() || x.surface.is_none())
+            .is_some_and(|x| x.blend().is_some() || x.surface().is_none())
         {
             for &g in set.iter() {
                 cache.insert(g, set.clone());
@@ -883,7 +883,7 @@ fn cost<T>(f: impl FnOnce() -> T) -> (usize, usize, T) {
 fn claimed_cylinder(n: usize) -> Object {
     let claim = {
         let c = cylinder(0.1, 0.1, 24);
-        c.faces().values().find_map(|f| f.surface).unwrap()
+        c.faces().values().find_map(|f| f.surface()).unwrap()
     };
     let ring = |z: f64| {
         (0..n).map(move |i| {
@@ -922,7 +922,7 @@ fn rim_work(n: usize) -> (usize, [usize; 5]) {
     let wall = c
         .faces()
         .iter()
-        .find(|(_, f)| f.surface.is_some())
+        .find(|(_, f)| f.surface().is_some())
         .map(|(id, _)| id)
         .unwrap();
     let near = c.loop_positions(c.faces()[wall].outer_loop).next().unwrap();

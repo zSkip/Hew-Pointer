@@ -227,7 +227,7 @@ fn resizing_a_fillet_under_a_later_fillet_puts_the_later_one_back() {
     assert!(!report.new_faces.is_empty());
     assert!(report.new_faces.iter().all(|&f| {
         resized.faces()[f]
-            .blend
+            .blend()
             .is_some_and(|t| report.blends.contains(&t.id))
     }));
     assert_eq!(resized.blend_features().len(), 2);

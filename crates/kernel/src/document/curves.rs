@@ -372,7 +372,7 @@ impl Document {
                 replaced: obj
                     .faces()
                     .iter()
-                    .filter(|(_, f)| f.blend.is_some_and(|t| t.id == id))
+                    .filter(|(_, f)| f.blend().is_some_and(|t| t.id == id))
                     .map(|(fid, _)| fid)
                     .collect(),
                 applied: s.profile.clone(),
@@ -1788,9 +1788,7 @@ fn curve_marks(obj: &Object, pose: &Transform) -> CurveMarks {
         .collect();
     let map_geom = |g: crate::sketch::CurveGeom| crate::ops::map_curve(Some(g), pose, scale);
     let edges = obj
-        .edges()
-        .iter()
-        .filter(|(_, e)| e.curve.is_some() || e.polygon.is_some())
+        .edge_arc_entries()
         .filter_map(|(id, e)| {
             let (a, b) = obj.edge_endpoints(id)?;
             Some(CurveEdgeMark {
@@ -1802,14 +1800,14 @@ fn curve_marks(obj: &Object, pose: &Transform) -> CurveMarks {
         .collect();
     let mut faces = Vec::new();
     for face in obj.faces().values() {
-        if face.blend.is_none() && face.surface.is_none() {
+        if face.blend().is_none() && face.surface().is_none() {
             continue;
         }
-        let surface = PosedClaim::of(face.surface, |s| {
+        let surface = PosedClaim::of(face.surface(), |s| {
             crate::ops::map_surface(Some(s), pose, scale)
         });
         let tag = face
-            .blend
+            .blend()
             .map(|t| {
                 format!(
                     "{:?}/{:?}/{}",

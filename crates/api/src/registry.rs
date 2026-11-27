@@ -2734,6 +2734,7 @@ impl Registry {
             });
             cmd.refusals = vec![
                 "export_failed",
+                "export_too_large",
                 "host_capability_missing",
                 "nothing_to_export",
                 "save_failed",

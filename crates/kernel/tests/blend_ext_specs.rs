@@ -31,8 +31,8 @@ fn blend_ok(obj: &Object, s: &BlendSpec) -> (Object, BlendReport) {
     assert_valid_solid(&after);
     for &f in &report.new_faces {
         let face = &after.faces()[f];
-        assert!(face.blend.is_some());
-        if let Some(claim) = face.surface {
+        assert!(face.blend().is_some());
+        if let Some(claim) = face.surface() {
             for p in after.loop_positions(face.outer_loop) {
                 assert!(
                     claim.distance(p).abs() <= kernel::tol::PLANE_DIST,
@@ -52,7 +52,7 @@ fn claims(after: &Object, report: &BlendReport) -> Vec<SurfaceRef> {
     report
         .new_faces
         .iter()
-        .filter_map(|&f| after.faces()[f].surface)
+        .filter_map(|&f| after.faces()[f].surface())
         .collect()
 }
 
@@ -171,7 +171,7 @@ fn bullnose_board() {
         after
             .faces()
             .values()
-            .all(|f| f.blend.is_some() || f.plane.normal().y > -1.0 + 1e-9)
+            .all(|f| f.blend().is_some() || f.plane.normal().y > -1.0 + 1e-9)
     );
     let cs = claims(&after, &report);
     assert_eq!(cs.len(), 8);
@@ -236,7 +236,7 @@ fn ogee_on_box_edge_is_two_cylinder_bands() {
     }
     assert_eq!(groups.len(), 2);
     for &f in &report.new_faces {
-        assert_eq!(after.faces()[f].blend.unwrap().kind, BlendKind::Profile);
+        assert_eq!(after.faces()[f].blend().unwrap().kind, BlendKind::Profile);
     }
 }
 
@@ -309,7 +309,7 @@ fn stopped_fillet() {
     let runouts = report
         .new_faces
         .iter()
-        .filter(|&&f| after.faces()[f].blend.unwrap().role == BlendRole::Runout)
+        .filter(|&&f| after.faces()[f].blend().unwrap().role == BlendRole::Runout)
         .count();
     assert_eq!(runouts, 2 * n as usize);
     // The edge stays sharp from each end to R.
@@ -485,7 +485,7 @@ fn pipe_tee() -> (Object, Vec<EdgeId>) {
         .keys()
         .filter(|&e| {
             let (x, y) = tee.edge_faces_for_test(e).unwrap();
-            match (tee.faces()[x].surface, tee.faces()[y].surface) {
+            match (tee.faces()[x].surface(), tee.faces()[y].surface()) {
                 (
                     Some(SurfaceRef::Cylinder { axis: p, .. }),
                     Some(SurfaceRef::Cylinder { axis: q, .. }),
@@ -505,7 +505,7 @@ fn strip_interior_soft(after: &Object, report: &BlendReport) -> bool {
         .copied()
         .filter(|&f| {
             after.faces()[f]
-                .blend
+                .blend()
                 .is_some_and(|t| t.role == BlendRole::Strip)
         })
         .collect();
@@ -542,7 +542,7 @@ fn swept_blend_rails_are_tangent_edges() {
             rails += 1;
             assert_ne!(got, EdgeSmoothness::Hard, "rail {e:?}");
         } else if !new.contains(&x)
-            && after.faces()[x].surface.is_none() != after.faces()[y].surface.is_none()
+            && after.faces()[x].surface().is_none() != after.faces()[y].surface().is_none()
         {
             assert_eq!(got, EdgeSmoothness::Hard, "rim {e:?}");
         }
@@ -653,7 +653,7 @@ fn cut_through_fillet_stays_hard(offset: f64) {
     let mut on_cut = 0;
     for e in cut.edges().keys() {
         let (x, y) = cut.edge_faces_for_test(e).unwrap();
-        let tagged = |g: kernel::FaceId| cut.faces()[g].blend.is_some();
+        let tagged = |g: kernel::FaceId| cut.faces()[g].blend().is_some();
         let (a, b) = cut.edge_endpoints(e).unwrap();
         let m = (a.to_vec() + b.to_vec()) * 0.5;
         if tagged(x) != tagged(y) && (m.dot(n) - offset).abs() < 1e-6 {
@@ -668,7 +668,7 @@ fn cut_through_fillet_stays_hard(offset: f64) {
             let strip = if tagged(x) { x } else { y };
             for v in [a, b] {
                 let own = cut.faces()[strip]
-                    .surface
+                    .surface()
                     .and_then(|sr| sr.normal_at(v))
                     .map(|n| {
                         if n.dot(cut.faces()[strip].plane.normal()) < 0.0 {
@@ -744,7 +744,7 @@ fn swept_blend_oblique_plane_cylinder() {
         .filter(|&e| {
             let (x, y) = cut.edge_faces_for_test(e).unwrap();
             let (p, q) = cut.edge_endpoints(e).unwrap();
-            (cut.faces()[x].surface.is_some() != cut.faces()[y].surface.is_some())
+            (cut.faces()[x].surface().is_some() != cut.faces()[y].surface().is_some())
                 && p.z > 0.3
                 && q.z > 0.3
         })
@@ -773,7 +773,7 @@ fn new_kinds(after: &Object, report: &BlendReport) -> Vec<kernel::BlendKind> {
     report
         .new_faces
         .iter()
-        .filter_map(|&f| after.faces()[f].blend.map(|t| t.kind))
+        .filter_map(|&f| after.faces()[f].blend().map(|t| t.kind))
         .collect()
 }
 
@@ -803,7 +803,7 @@ fn swept_chamfer_on_the_pipe_tee() {
         report
             .new_faces
             .iter()
-            .all(|&f| after.faces()[f].surface.is_none())
+            .all(|&f| after.faces()[f].surface().is_none())
     );
     // Asymmetric: the rail on the branch side sits farther from the seam.
     let asym = BlendProfile::Chamfer {
@@ -853,7 +853,7 @@ fn swept_chamfer_on_an_oblique_cut() {
         .filter(|&e| {
             let (x, y) = cut.edge_faces_for_test(e).unwrap();
             let (p, q) = cut.edge_endpoints(e).unwrap();
-            (cut.faces()[x].surface.is_some() != cut.faces()[y].surface.is_some())
+            (cut.faces()[x].surface().is_some() != cut.faces()[y].surface().is_some())
                 && p.z > 0.3
                 && q.z > 0.3
         })
@@ -913,7 +913,7 @@ fn half_tee() -> (Object, Vec<EdgeId>) {
         .keys()
         .filter(|&e| {
             let (x, y) = half.edge_faces_for_test(e).unwrap();
-            match (half.faces()[x].surface, half.faces()[y].surface) {
+            match (half.faces()[x].surface(), half.faces()[y].surface()) {
                 (
                     Some(SurfaceRef::Cylinder { axis: p, .. }),
                     Some(SurfaceRef::Cylinder { axis: q, .. }),
@@ -934,7 +934,7 @@ fn end_crease_edges(after: &Object, report: &BlendReport) -> Vec<EdgeId> {
         .copied()
         .filter(|&f| {
             after.faces()[f]
-                .blend
+                .blend()
                 .is_some_and(|t| t.role == BlendRole::Strip)
         })
         .collect();
@@ -1017,7 +1017,7 @@ fn tee_cut_at(x: f64) -> (Object, Vec<EdgeId>) {
         .keys()
         .filter(|&e| {
             let (x, y) = half.edge_faces_for_test(e).unwrap();
-            match (half.faces()[x].surface, half.faces()[y].surface) {
+            match (half.faces()[x].surface(), half.faces()[y].surface()) {
                 (
                     Some(SurfaceRef::Cylinder { axis: p, .. }),
                     Some(SurfaceRef::Cylinder { axis: q, .. }),
@@ -1075,7 +1075,7 @@ fn two_open_swept_chains_ending_on_one_face() {
         .keys()
         .filter(|&e| {
             let (x, y) = half.edge_faces_for_test(e).unwrap();
-            match (half.faces()[x].surface, half.faces()[y].surface) {
+            match (half.faces()[x].surface(), half.faces()[y].surface()) {
                 (
                     Some(SurfaceRef::Cylinder { axis: p, .. }),
                     Some(SurfaceRef::Cylinder { axis: q, .. }),
@@ -2003,7 +2003,7 @@ fn a_lofted_coaxial_rim_rounds_as_a_torus() {
                 after
                     .faces()
                     .values()
-                    .all(|f| f.blend.is_some() || f.surface.is_none()),
+                    .all(|f| f.blend().is_some() || f.surface().is_none()),
                 "hull {h} z {z}"
             );
         }
@@ -2116,7 +2116,7 @@ fn face_pick_on_a_pipe_wall_facet_takes_the_nearer_rim_only() {
         .filter(|&e| {
             let (a, b) = tee.edge_faces_for_test(e).unwrap();
             matches!(
-                (tee.faces()[a].surface, tee.faces()[b].surface),
+                (tee.faces()[a].surface(), tee.faces()[b].surface()),
                 (Some(SurfaceRef::Cylinder { axis: p, .. }), Some(SurfaceRef::Cylinder { axis: q, .. }))
                     if p.dot(q).abs() < 0.5
             )
@@ -2127,7 +2127,7 @@ fn face_pick_on_a_pipe_wall_facet_takes_the_nearer_rim_only() {
     let (a, b) = tee.edge_faces_for_test(e).unwrap();
     let branch_facet = [a, b]
         .into_iter()
-        .find(|&f| matches!(tee.faces()[f].surface, Some(SurfaceRef::Cylinder { axis, .. }) if axis.y.abs() > 0.9))
+        .find(|&f| matches!(tee.faces()[f].surface(), Some(SurfaceRef::Cylinder { axis, .. }) if axis.y.abs() > 0.9))
         .unwrap();
     let (p, q) = tee.edge_endpoints(e).unwrap();
     // Just off the junction, on the branch side (+y).
@@ -2223,7 +2223,7 @@ fn a_swept_strip_shades_one_normal_per_vertex_and_meets_its_rails_tangent() {
                 let (strip, wall) = if new.contains(&x) { (x, y) } else { (y, x) };
                 for v in [p, q] {
                     let got = shade_at(&after, strip, v).expect("anchored");
-                    let want = match after.faces()[wall].surface {
+                    let want = match after.faces()[wall].surface() {
                         Some(SurfaceRef::Cylinder {
                             axis_point, axis, ..
                         }) => {

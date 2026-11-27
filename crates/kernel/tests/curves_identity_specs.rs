@@ -79,7 +79,7 @@ fn marks(doc: &Document, o: ObjectId) -> (usize, usize, u8) {
     let mut blends: Vec<_> = obj
         .faces()
         .values()
-        .filter_map(|f| f.blend)
+        .filter_map(|f| f.blend())
         .map(|t| t.id)
         .collect();
     blends.sort();
@@ -260,10 +260,16 @@ fn claims(doc: &Document, o: ObjectId) -> (usize, usize, usize) {
     let cylinders = obj
         .faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
         .count();
-    let circles = obj.edges().values().filter(|e| e.curve.is_some()).count();
-    let polygons = obj.edges().values().filter(|e| e.polygon.is_some()).count();
+    let circles = obj
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
+    let polygons = obj
+        .edge_arc_entries()
+        .filter(|(_, a)| a.polygon.is_some())
+        .count();
     (cylinders, circles, polygons)
 }
 
@@ -417,7 +423,7 @@ fn a_mirror_keeps_creases_and_smooth_and_drops_only_the_record() {
     assert_eq!(marks(&doc, o), (0, 1, 1));
     // The blend still edits, by derivation from its tagged faces.
     let obj = doc.object(o).unwrap();
-    let id = obj.faces().values().find_map(|f| f.blend).unwrap().id;
+    let id = obj.faces().values().find_map(|f| f.blend()).unwrap().id;
     doc.remove_blend(o, id).unwrap();
 }
 

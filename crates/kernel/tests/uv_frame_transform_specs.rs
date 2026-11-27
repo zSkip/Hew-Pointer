@@ -76,7 +76,7 @@ fn framed_quad_scene(pose: Transform) -> ImportScene {
 fn corner_uvs(obj: &Object) -> Vec<[f64; 2]> {
     obj.faces()
         .iter()
-        .filter_map(|(_, f)| f.uv_frame.map(|fr| (f, fr)))
+        .filter_map(|(_, f)| f.uv_frame().map(|fr| (f, fr)))
         .flat_map(|(f, fr)| {
             obj.loop_positions(f.outer_loop)
                 .map(move |p| fr.apply(p))
@@ -213,14 +213,14 @@ fn a_reflection_is_baked_and_mirrors_the_frame() {
     assert_uvs_close(&got, &want, 1e-9);
     // Each mirrored corner position carries the uv its source corner had.
     for (_, f) in before.faces().iter() {
-        let Some(fr) = f.uv_frame else { continue };
+        let Some(fr) = f.uv_frame() else { continue };
         for p in before.loop_positions(f.outer_loop) {
             let m = mirror.apply_point(p);
             let uv = fr.apply(p);
             assert!(
                 obj.faces()
                     .iter()
-                    .any(|(_, g)| g.uv_frame.is_some_and(|gf| {
+                    .any(|(_, g)| g.uv_frame().is_some_and(|gf| {
                         let u = gf.apply(m);
                         (u[0] - uv[0]).abs() < 1e-9 && (u[1] - uv[1]).abs() < 1e-9
                     })),
@@ -290,7 +290,7 @@ fn an_already_invalid_frame_does_not_block_a_move() {
     let mut doc = Document::new();
     doc.ingest(scene, vec![]).unwrap();
     let obj = doc.object(the_member(&doc)).unwrap().clone();
-    let frame = |o: &Object| o.faces().iter().next().unwrap().1.uv_frame;
+    let frame = |o: &Object| o.faces().iter().next().unwrap().1.uv_frame();
     assert_eq!(frame(&obj), Some(parallel), "the frame arrived as it was");
     for t in [
         Transform::translation(Vec3::new(3.0, -1.0, 2.0)),

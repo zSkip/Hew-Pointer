@@ -553,13 +553,10 @@ fn every_leftover_run_of_the_inscribed_circle_borders_the_wall_and_the_disc() {
             let other = if a == lf { b } else { a };
             if other == wall {
                 with_wall += 1;
-                assert!(
-                    obj.edges()[e].curve.is_none(),
-                    "rectangle edges claim nothing"
-                );
+                assert!(obj.edge_curve(e).is_none(), "rectangle edges claim nothing");
             } else if other == disc {
                 with_disc += 1;
-                assert_eq!(obj.edges()[e].curve, Some(g), "arcs keep the circle");
+                assert_eq!(obj.edge_curve(e), Some(g), "arcs keep the circle");
             }
         }
         assert!(with_wall >= 1 && with_disc >= 1);
@@ -705,7 +702,7 @@ fn rounded_corner_workflow(mut w: Wall) {
     );
     let arcs = obj
         .loop_half_edges(obj.faces()[shape].outer_loop)
-        .filter(|&h| obj.edges()[obj.half_edges()[h].edge].curve == Some(g))
+        .filter(|&h| obj.edge_curve(obj.half_edges()[h].edge) == Some(g))
         .count();
     assert_eq!(arcs, 12, "an arc-and-line shape, not a circle");
     assert_eq!(
@@ -732,7 +729,7 @@ fn rounded_corner_workflow(mut w: Wall) {
         let cylinders = obj
             .faces()
             .values()
-            .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+            .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
             .count();
         assert_eq!(cylinders, 12, "the corner walls are cylinder facets");
         w.doc.undo().expect("undo the push/pull");
@@ -752,7 +749,7 @@ fn rounded_corner_workflow(mut w: Wall) {
             o.validate().expect("valid piece");
             o.faces()
                 .values()
-                .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+                .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
                 .count()
         })
         .sum();

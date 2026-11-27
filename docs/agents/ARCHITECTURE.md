@@ -469,8 +469,9 @@ the cylinder it is a chord facet of — durable metadata over the faceted
 carrier, propagated under a strict map-or-drop contract and held honest by
 the validator. The same identity follows a curve onto a solid's face: a
 circle or arc drawn there (lowered to topology) stamps its facets' circle onto the solid's
-edges (`Edge::curve`, one claim per edge, so a pie or segment claims only
-its arc), every wall-raising path — boss, wall-building push/pull,
+edges (`EdgeArcs::curve`, kept in the object's sparse per-edge arc table, one
+claim per edge, so a pie or segment claims only its arc), every wall-raising
+path — boss, wall-building push/pull,
 push-through — stamps a wall per facet from its base edge's claim (gated
 on the edge being a genuine facet, never a secant), and a push carries a
 claim with the rim it moves. Push/pull on a stamped wall facet acts on the *logical

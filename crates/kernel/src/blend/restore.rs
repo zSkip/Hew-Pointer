@@ -411,7 +411,7 @@ fn consumed_faces(
 ) -> (Vec<Virtual>, Consumed) {
     let claims: Vec<SurfaceRef> = region
         .iter()
-        .filter_map(|&f| obj.faces()[f].surface)
+        .filter_map(|&f| obj.faces()[f].surface())
         .collect();
     let centroid = |f: FaceId| {
         let ps: Vec<Point3> = obj.loop_positions(obj.faces()[f].outer_loop).collect();
@@ -435,14 +435,14 @@ fn consumed_faces(
             || !around.iter().all(|f| {
                 region.contains(f)
                     && obj.faces()[*f]
-                        .blend
+                        .blend()
                         .is_some_and(|t| t.role == crate::topo::BlendRole::Strip)
             })
         {
             continue;
         }
         let Some(SurfaceRef::Sphere { center, .. }) =
-            around.iter().find_map(|&f| obj.faces()[f].surface)
+            around.iter().find_map(|&f| obj.faces()[f].surface())
         else {
             continue;
         };
@@ -485,7 +485,7 @@ fn consumed_faces(
         let flat: Vec<FaceId> = neighbours
             .iter()
             .copied()
-            .filter(|&f| obj.faces()[f].surface.is_none())
+            .filter(|&f| obj.faces()[f].surface().is_none())
             .collect();
         for &s1 in &flat {
             for &s2 in &flat {
@@ -554,14 +554,14 @@ fn dpost_facets(
     };
     // The trimmed facet: a neighbour on a cylinder along the strip.
     let fm = neighbours.iter().copied().find(|&f| {
-        matches!(obj.faces()[f].surface, Some(SurfaceRef::Cylinder { axis, .. })
+        matches!(obj.faces()[f].surface(), Some(SurfaceRef::Cylinder { axis, .. })
             if axis.dot(strip_axis).abs() >= 1.0 - tol::NORMAL_DIRECTION)
     })?;
     let Some(SurfaceRef::Cylinder {
         axis_point,
         axis,
         radius,
-    }) = obj.faces()[fm].surface
+    }) = obj.faces()[fm].surface()
     else {
         return None;
     };
@@ -576,7 +576,7 @@ fn dpost_facets(
     let flat = neighbours
         .iter()
         .copied()
-        .find(|&f| f != fm && !caps.contains(&f) && obj.faces()[f].surface.is_none())?;
+        .find(|&f| f != fm && !caps.contains(&f) && obj.faces()[f].surface().is_none())?;
     let a_plane = obj.faces()[flat].plane;
     let (u, w) = crate::triangulate::plane_basis(axis);
     let angle = |p: Point3| {
@@ -774,7 +774,8 @@ fn lengthened_meta(obj: &Object, v: VertexId, p: Point3) -> Option<EdgeMeta> {
             let t = toward.dot(along) / len;
             let off = (toward - along * (t / len)).length();
             if t > 0.0 && off <= tol::BLEND_VERIFY {
-                let e = &obj.edges()[hes[h].edge];
+                let eid = hes[h].edge;
+                let e = &obj.edges()[eid];
                 let on_circle = |g: &crate::sketch::CurveGeom| {
                     ((p - g.center).length() - g.radius).abs()
                         <= obj.planarity_tol.max(tol::PLANE_DIST)
@@ -782,8 +783,8 @@ fn lengthened_meta(obj: &Object, v: VertexId, p: Point3) -> Option<EdgeMeta> {
                 let meta = EdgeMeta {
                     soft: e.soft,
                     crease: e.crease,
-                    curve: e.curve.filter(on_circle),
-                    polygon: e.polygon,
+                    curve: obj.edge_curve(eid).filter(on_circle),
+                    polygon: obj.edge_polygon(eid),
                 };
                 return (meta != EdgeMeta::default()).then_some(meta);
             }

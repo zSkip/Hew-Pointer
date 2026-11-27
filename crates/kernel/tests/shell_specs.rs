@@ -28,7 +28,7 @@ fn bottom_of(obj: &Object) -> FaceId {
 /// the claim's plane invariants hold (the strict stamping predicate).
 fn assert_claims_hold(obj: &Object) {
     for (f, face) in obj.faces() {
-        let Some(s) = face.surface else { continue };
+        let Some(s) = face.surface() else { continue };
         let pts: Vec<Point3> = std::iter::once(face.outer_loop)
             .chain(face.inner_loops.iter().copied())
             .flat_map(|l| obj.loop_positions(l).collect::<Vec<_>>())
@@ -45,7 +45,10 @@ fn assert_claims_hold(obj: &Object) {
 }
 
 fn claimed(obj: &Object) -> usize {
-    obj.faces().values().filter(|f| f.surface.is_some()).count()
+    obj.faces()
+        .values()
+        .filter(|f| f.surface().is_some())
+        .count()
 }
 
 /// The shell keeps every claim: each claimed wall's offset claims too
@@ -65,7 +68,7 @@ fn shells(obj: &Object) -> usize {
 fn radii(obj: &Object) -> BTreeMap<&'static str, Vec<f64>> {
     let mut out: BTreeMap<&'static str, Vec<f64>> = BTreeMap::new();
     for face in obj.faces().values() {
-        let (k, r) = match face.surface {
+        let (k, r) = match face.surface() {
             Some(SurfaceRef::Cylinder { radius, .. }) => ("cylinder", radius),
             Some(SurfaceRef::Sphere { radius, .. }) => ("sphere", radius),
             Some(SurfaceRef::Torus { minor_radius, .. }) => ("torus", minor_radius),
@@ -599,7 +602,7 @@ fn refined_vertices_lie_on_offset_claims() {
     let cones = r
         .faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cone { .. })))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cone { .. })))
         .count();
     assert_eq!(cones, 64, "outer and inner chamfer bands both claim cones");
 }
@@ -985,7 +988,7 @@ fn a_pocket_floor_under_a_thicker_wall_opens_a_hole_through_the_top() {
                 .fold((f64::MAX, f64::MIN), |(l, u), &z| (l.min(z), u.max(z)));
             assert!((hi - 1.0).abs() < 1e-12 && (lo - (1.0 - t)).abs() < 1e-12);
             assert_eq!(
-                w.surface.is_some(),
+                w.surface().is_some(),
                 round,
                 "a round wall keeps its cylinder"
             );

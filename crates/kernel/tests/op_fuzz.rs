@@ -64,7 +64,7 @@ enum FuzzOp {
         shrink: f64,
         staple: bool,
     },
-    /// Imprint a 24-gon CIRCLE carrying its analytic identity (`Edge::curve`)
+    /// Imprint a 24-gon CIRCLE carrying its analytic identity (`EdgeArcs::curve`)
     /// strictly inside the `face_sel`-th face, radius a fraction of the face's
     /// inradius. Exercises the map-or-drop paths: a later push_pull/extrude of
     /// the imprinted face moves the claim off its circle (the true-curves

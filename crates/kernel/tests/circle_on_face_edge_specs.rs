@@ -96,9 +96,9 @@ fn assert_claims_are_whole_facets(obj: &Object, ring: &[Point3], g: CurveGeom) -
         })
     };
     let mut claimed = 0;
-    for (e, edge) in obj.edges() {
+    for e in obj.edges().keys() {
         let (a, b) = obj.edge_endpoints(e).expect("live edge");
-        match edge.curve {
+        match obj.edge_curve(e) {
             Some(c) => {
                 assert!(
                     c.center.approx_eq(g.center, tol::POINT_MERGE)

@@ -105,7 +105,7 @@ fn runs_close(runs: &[Vec<(Point3, Point3)>]) -> bool {
 fn runs_hold_every_claim(obj: &Object, runs: &[Vec<(Point3, Point3)>], g: CurveGeom) {
     let segs: Vec<(Point3, Point3)> = runs.iter().flatten().copied().collect();
     for e in obj.edges().keys() {
-        let Some(c) = obj.edges()[e].curve else {
+        let Some(c) = obj.edge_curve(e) else {
             continue;
         };
         if !same_circle(c, g) {

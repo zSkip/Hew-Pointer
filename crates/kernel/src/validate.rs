@@ -54,7 +54,7 @@ impl Object {
                     .get(slot.0 as usize)
                     .is_some_and(|d| !d.is_empty())
         };
-        if !self.faces.values().all(|f| slot_ok(f.attrs)) {
+        if !self.faces.values().all(|f| slot_ok(f.attr_slot())) {
             return Err(TopologyError::DanglingHandle {
                 context: "face attribute slot",
             });
@@ -110,6 +110,7 @@ impl Object {
         for (e, edge) in &self.edges {
             self.validate_edge(e, edge)?;
         }
+        self.validate_edge_arcs()?;
 
         // Loops and faces agree; face boundaries are planar.
         for (f, face) in &self.faces {
@@ -335,6 +336,7 @@ impl Object {
         for &f in faces {
             self.validate_reopens(f, &self.faces[f])?;
         }
+        self.validate_edge_arcs()?;
         Ok(())
     }
 
@@ -432,6 +434,20 @@ impl Object {
     }
 
     /// One edge agrees with its half-edges, and its marks and claim hold.
+    /// The arc table ([`crate::topo::EdgeArcs`]) holds records for live
+    /// edges only, and no empty record: a removed edge took its records
+    /// with it.
+    fn validate_edge_arcs(&self) -> Result<(), TopologyError> {
+        for (&e, arcs) in self.edge_arcs.iter() {
+            if !self.edges.contains_key(e) || arcs.is_empty() {
+                return Err(TopologyError::DanglingHandle {
+                    context: "edge arc record",
+                });
+            }
+        }
+        Ok(())
+    }
+
     fn validate_edge(
         &self,
         e: crate::ids::EdgeId,
@@ -487,7 +503,7 @@ impl Object {
         // describes (map-or-drop's enforcement half): both endpoints are
         // chord facets of the circle, so each lies within tolerance of
         // `radius` from `center`, and the radius is non-degenerate.
-        if let Some(crate::sketch::CurveGeom { center, radius }) = edge.curve {
+        if let Some(crate::sketch::CurveGeom { center, radius }) = self.edge_curve(e) {
             let mismatch = TopologyError::EdgeCurveMismatch { edge: e };
             if !radius.is_finite()
                 || !(center.x.is_finite() && center.y.is_finite() && center.z.is_finite())
@@ -629,7 +645,7 @@ impl Object {
         // claims to describe (map-or-drop's enforcement half): the weak
         // per-class conditions every chord facet satisfies
         // (`surface::validate_face_claim`).
-        if let Some(claim) = face.surface {
+        if let Some(claim) = face.surface() {
             let points: Vec<crate::math::Point3> = std::iter::once(face.outer_loop)
                 .chain(face.inner_loops.iter().copied())
                 .flat_map(|l| self.loop_positions(l))
@@ -1313,26 +1329,79 @@ pub(crate) mod tests {
         let f = tet.faces.keys().next().unwrap();
         // Claim a face is a chord facet of a cylinder it cannot be on (its
         // vertices sit farther from the axis than the radius).
-        tet.faces[f].surface = Some(SurfaceRef::Cylinder {
+        tet.faces[f].set_surface(Some(SurfaceRef::Cylinder {
             axis_point: Point3::new(10.0, 10.0, 0.0),
             axis: Vec3::new(0.0, 0.0, 1.0),
             radius: 0.001,
-        });
+        }));
         assert!(matches!(
             tet.validate(),
             Err(TopologyError::FaceSurfaceMismatch { .. })
         ));
 
         // A non-unit axis is caught too.
-        tet.faces[f].surface = Some(SurfaceRef::Cylinder {
+        tet.faces[f].set_surface(Some(SurfaceRef::Cylinder {
             axis_point: Point3::ORIGIN,
             axis: Vec3::new(0.0, 0.0, 2.0),
             radius: 100.0,
-        });
+        }));
         assert!(matches!(
             tet.validate(),
             Err(TopologyError::FaceSurfaceMismatch { .. })
         ));
+    }
+
+    #[test]
+    fn validator_catches_arc_records_of_removed_edges() {
+        use crate::sketch::CurveGeom;
+        let mut tet = Object::tetrahedron();
+        assert!(tet.validate().is_ok());
+        let e = tet.edges.keys().next().unwrap();
+        let (a, b) = tet.edge_endpoints(e).unwrap();
+        let g = CurveGeom {
+            center: a + (b - a) * 0.5,
+            radius: (b - a).length() * 0.5,
+        };
+        tet.set_edge_polygon(e, Some(g));
+        assert!(tet.validate().is_ok(), "a record on a live edge is fine");
+        // An edge dropped without its records leaves one behind.
+        tet.edges.remove(e);
+        assert!(matches!(
+            tet.validate_edge_arcs(),
+            Err(TopologyError::DanglingHandle {
+                context: "edge arc record"
+            })
+        ));
+    }
+
+    #[test]
+    fn edge_arc_records_follow_their_edge() {
+        use crate::sketch::CurveGeom;
+        let mut tet = Object::tetrahedron();
+        let e = tet.edges.keys().next().unwrap();
+        let g = CurveGeom {
+            center: Point3::new(1.0, 2.0, 3.0),
+            radius: 4.0,
+        };
+        let shared = tet.clone();
+        // Clearing what is not there writes nothing: the table stays shared.
+        tet.set_edge_curve(e, None);
+        assert!(tet.edge_arcs.ptr_eq(&shared.edge_arcs));
+        tet.set_edge_curve(e, Some(g));
+        tet.set_edge_polygon(e, Some(g));
+        assert_eq!(tet.edge_curve(e), Some(g));
+        assert_eq!(tet.edge_polygon(e), Some(g));
+        assert!(shared.edge_arcs(e).is_empty(), "a clone is unaffected");
+        // Clearing one record keeps the other; clearing both drops the entry.
+        tet.set_edge_curve(e, None);
+        assert_eq!(tet.edge_arcs(e).polygon, Some(g));
+        tet.set_edge_polygon(e, None);
+        assert_eq!(tet.edge_arc_entries().count(), 0);
+        // A removed edge takes its records with it.
+        tet.set_edge_curve(e, Some(g));
+        tet.remove_edge(e);
+        assert_eq!(tet.edge_arc_entries().count(), 0);
+        assert!(tet.edge_curve(e).is_none());
     }
 
     #[test]
@@ -1342,20 +1411,26 @@ pub(crate) mod tests {
         let e = tet.edges.keys().next().unwrap();
         // Claim an edge is a chord facet of a circle its endpoints are not on
         // (its endpoints sit far from `radius` off the center).
-        tet.edges[e].curve = Some(CurveGeom {
-            center: Point3::new(0.0, 0.0, 0.0),
-            radius: 0.001,
-        });
+        tet.set_edge_curve(
+            e,
+            Some(CurveGeom {
+                center: Point3::new(0.0, 0.0, 0.0),
+                radius: 0.001,
+            }),
+        );
         assert!(matches!(
             tet.validate(),
             Err(TopologyError::EdgeCurveMismatch { .. })
         ));
 
         // A degenerate radius is caught too.
-        tet.edges[e].curve = Some(CurveGeom {
-            center: Point3::ORIGIN,
-            radius: 0.0,
-        });
+        tet.set_edge_curve(
+            e,
+            Some(CurveGeom {
+                center: Point3::ORIGIN,
+                radius: 0.0,
+            }),
+        );
         assert!(matches!(
             tet.validate(),
             Err(TopologyError::EdgeCurveMismatch { .. })

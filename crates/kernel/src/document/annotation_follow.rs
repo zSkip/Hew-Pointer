@@ -198,7 +198,7 @@ impl Document {
             return None;
         }
         let f = obj.faces().get(face)?;
-        let flat = f.surface.is_none() && obj.blend_of_face(face).is_none();
+        let flat = f.surface().is_none() && obj.blend_of_face(face).is_none();
         let moved = flat
             .then(|| FaceRegion::of(obj, face).map(|r| (r, f.plane.normal() * distance)))
             .flatten();

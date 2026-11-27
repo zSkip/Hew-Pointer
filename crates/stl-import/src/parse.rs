@@ -63,22 +63,74 @@ impl RawTriangles {
 /// `StlError::Empty` once, in one place, covering both encodings.
 pub fn parse(bytes: &[u8]) -> Result<(RawTriangles, Vec<String>), StlError> {
     let mut warnings = Vec::new();
+    match encoding(bytes) {
+        Encoding::Ascii => Ok((parse_ascii_or_fail(bytes)?, warnings)),
+        Encoding::Binary { declared, used } => {
+            if used < declared {
+                warnings.push(format!(
+                    "binary STL declares {declared} triangle{}, but only {used} complete record{} fit in the file; the file may be truncated",
+                    if declared == 1 { "" } else { "s" },
+                    if used == 1 { "" } else { "s" },
+                ));
+            } else if exact_binary_len(declared) != Some(bytes.len()) {
+                warnings.push(
+                    "file size did not exactly match the declared binary triangle count;                      parsed as binary anyway, ignoring trailing bytes"
+                        .to_string(),
+                );
+            }
+            Ok((parse_binary(bytes, used), warnings))
+        }
+    }
+}
 
+/// How many triangles [`parse`] reads from `bytes`, without reading them:
+/// a binary file's records (as many as fit), or a third of an ASCII file's
+/// `vertex` keywords. What [`crate::import`] sizes its memory by.
+pub fn triangle_count(bytes: &[u8]) -> usize {
+    match encoding(bytes) {
+        Encoding::Binary { used, .. } => used,
+        Encoding::Ascii => {
+            let mut count = 0;
+            let mut rest = bytes;
+            while let Some(at) = rest.windows(6).position(|w| w == b"vertex") {
+                count += 1;
+                rest = &rest[at + 6..];
+            }
+            count / 3
+        }
+    }
+}
+
+/// Which reader [`parse`] uses for `bytes` (DESIGN §2).
+enum Encoding {
+    Ascii,
+    /// `declared` triangles in the header, of which `used` complete
+    /// records are in the file.
+    Binary {
+        declared: usize,
+        used: usize,
+    },
+}
+
+fn encoding(bytes: &[u8]) -> Encoding {
     // Step 1: too short for even a binary header — the only chance is ASCII.
     if bytes.len() < BINARY_BODY_OFFSET {
-        return Ok((parse_ascii_or_fail(bytes)?, warnings));
+        return Encoding::Ascii;
     }
 
-    let declared_n = read_u32_le(bytes, BINARY_COUNT_OFFSET) as usize;
+    let declared = read_u32_le(bytes, BINARY_COUNT_OFFSET) as usize;
 
     // Step 2: the reliable discriminator — exact size identity. Deliberately
     // NOT gated on the header's leading bytes (some binary exporters write
     // the literal text "solid" into the 80-byte header, which would fool a
     // naive keyword check into misreading a binary file as ASCII).
-    if let Some(expected_len) = exact_binary_len(declared_n)
+    if let Some(expected_len) = exact_binary_len(declared)
         && bytes.len() == expected_len
     {
-        return Ok((parse_binary(bytes, declared_n), warnings));
+        return Encoding::Binary {
+            declared,
+            used: declared,
+        };
     }
 
     // Step 3: not an exact binary size — ASCII if it looks like text and
@@ -86,30 +138,19 @@ pub fn parse(bytes: &[u8]) -> Result<(RawTriangles, Vec<String>), StlError> {
     if let Ok(text) = std::str::from_utf8(bytes)
         && text.contains("facet")
     {
-        return Ok((parse_ascii_or_fail(bytes)?, warnings));
+        return Encoding::Ascii;
     }
 
     // Step 4: lenient binary fallback — tolerate a size mismatch (trailing
     // junk, or a truncated file with fewer complete records than declared),
     // reading however many complete 50-byte records actually fit. Loud, per
-    // DEVELOPMENT.md rule 4: the caller is told this file didn't match
-    // cleanly.
-    let available_records = (bytes.len() - BINARY_BODY_OFFSET) / BINARY_RECORD_LEN;
-    let used_n = declared_n.min(available_records);
-    if used_n < declared_n {
-        warnings.push(format!(
-            "binary STL declares {declared_n} triangle{}, but only {used_n} complete record{} fit in the file; the file may be truncated",
-            if declared_n == 1 { "" } else { "s" },
-            if used_n == 1 { "" } else { "s" },
-        ));
-    } else {
-        warnings.push(
-            "file size did not exactly match the declared binary triangle count; \
-             parsed as binary anyway, ignoring trailing bytes"
-                .to_string(),
-        );
+    // DEVELOPMENT.md rule 4: [`parse`] tells the caller this file didn't
+    // match cleanly.
+    let available = (bytes.len() - BINARY_BODY_OFFSET) / BINARY_RECORD_LEN;
+    Encoding::Binary {
+        declared,
+        used: declared.min(available),
     }
-    Ok((parse_binary(bytes, used_n), warnings))
 }
 
 /// `84 + 50*n`, or `None` on overflow (a hostile/corrupt `n` must never wrap).

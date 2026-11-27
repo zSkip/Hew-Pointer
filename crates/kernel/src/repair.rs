@@ -23,7 +23,9 @@ use crate::health::{Finding, Rim, diagnose};
 use crate::ids::{FaceId, HalfEdgeId, LoopId, ShellId, VertexId};
 use crate::math::{Plane, Point3, Vec3};
 use crate::tol;
-use crate::topo::{AttrSlot, Face, HalfEdge, Loop, LoopKind, Object, WatertightState};
+use crate::topo::{
+    AttrSlot, Face, FaceAttrs, HalfEdge, Loop, LoopKind, LoopList, Object, WatertightState,
+};
 
 /// The thinnest solid [`Object::thicken_sheet`] makes: a micron, far above
 /// the point-merge tolerance its walls' corners must clear, far below any
@@ -417,17 +419,19 @@ impl Object {
                 continue;
             }
             let rim = &d.rims[r];
-            let face = obj.faces.insert(Face {
-                outer_loop: LoopId::default(),
-                inner_loops: Vec::new(),
-                plane: caps[&r].plane,
-                material: None,
-                back_material: None,
-                uv_frame: None,
-                surface: None,
-                blend: None,
-                attrs: AttrSlot::NONE,
-            });
+            let face = obj.faces.insert(Face::new(
+                LoopId::default(),
+                LoopList::new(),
+                caps[&r].plane,
+                FaceAttrs {
+                    material: None,
+                    back_material: None,
+                    uv_frame: None,
+                    surface: None,
+                    blend: None,
+                    attrs: AttrSlot::NONE,
+                },
+            ));
             let outer = obj.add_cap_loop(&rim.half_edges, face, LoopKind::Outer);
             obj.faces[face].outer_loop = outer;
             for &h in holes.get(&r).map(Vec::as_slice).unwrap_or_default() {
@@ -625,7 +629,7 @@ impl Object {
                 // The lower copy faces the way the sheet's back did, and
                 // shows the back's paint.
                 let material = if by == lo {
-                    face.back_material.or(face.material)
+                    face.back_material().or(face.material)
                 } else {
                     face.material
                 };
@@ -634,7 +638,7 @@ impl Object {
                     rings,
                     plane,
                     material,
-                    shifted(face.uv_frame, by),
+                    shifted(face.uv_frame(), by),
                     None,
                     // Both copies are the sheet's face, dictionary included.
                     self.face_attrs(f).cloned().unwrap_or_default(),
@@ -672,10 +676,13 @@ impl Object {
             for v in moved.vertices.values_mut() {
                 v.position = v.position + shift;
             }
-            for e in moved.edges.values_mut() {
-                if let Some(c) = e.curve.as_mut() {
-                    c.center = c.center + shift;
-                }
+            let curves: Vec<(crate::ids::EdgeId, crate::sketch::CurveGeom)> = moved
+                .edge_arc_entries()
+                .filter_map(|(e, arcs)| Some((e, arcs.curve?)))
+                .collect();
+            for (e, mut c) in curves {
+                c.center = c.center + shift;
+                moved.set_edge_curve(e, Some(c));
             }
             obj.carry_edge_claims(&moved);
         }
@@ -891,14 +898,13 @@ impl Object {
             .filter_map(|e| {
                 let (a, b) = self.edge_endpoints(e)?;
                 let edge = &self.edges[e];
-                (edge.curve.is_some() || edge.polygon.is_some() || edge.soft || edge.crease).then(
-                    || {
-                        (
-                            claim_key(a, b),
-                            (edge.curve, edge.polygon, edge.soft, edge.crease),
-                        )
-                    },
-                )
+                let arcs = self.edge_arcs(e);
+                (!arcs.is_empty() || edge.soft || edge.crease).then(|| {
+                    (
+                        claim_key(a, b),
+                        (arcs.curve, arcs.polygon, edge.soft, edge.crease),
+                    )
+                })
             })
             .collect()
     }
@@ -914,7 +920,8 @@ impl Object {
             .collect();
         let mut out: Vec<EdgeClaims> = vec![BTreeMap::new(); pieces.len()];
         for (e, edge) in &self.edges {
-            if !(edge.curve.is_some() || edge.polygon.is_some() || edge.soft || edge.crease) {
+            let arcs = self.edge_arcs(e);
+            if !(!arcs.is_empty() || edge.soft || edge.crease) {
                 continue;
             }
             let face = self.loops[self.half_edges[edge.half_edge].loop_id].face;
@@ -923,7 +930,7 @@ impl Object {
             };
             out[i].insert(
                 claim_key(a, b),
-                (edge.curve, edge.polygon, edge.soft, edge.crease),
+                (arcs.curve, arcs.polygon, edge.soft, edge.crease),
             );
         }
         out
@@ -940,9 +947,8 @@ impl Object {
                 continue;
             };
             if let Some(&(curve, polygon, soft, crease)) = claims.get(&claim_key(a, b)) {
+                self.set_edge_arcs(e, crate::topo::EdgeArcs { curve, polygon });
                 let edge = &mut self.edges[e];
-                edge.curve = curve;
-                edge.polygon = polygon;
                 edge.soft = soft && edge.twin_half_edge.is_some();
                 edge.crease = crease && edge.twin_half_edge.is_some();
             }
@@ -1168,7 +1174,7 @@ impl Object {
                             edge.crease = false;
                         }
                         None => {
-                            self.edges.remove(he.edge);
+                            self.remove_edge(he.edge);
                         }
                     }
                 }

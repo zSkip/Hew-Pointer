@@ -103,7 +103,7 @@ fn square_onto_cylinder_wall() {
     for &f in &region {
         let face = &r.faces()[f];
         assert!(
-            matches!(face.surface, Some(SurfaceRef::Cylinder { radius, .. }) if radius == 0.05),
+            matches!(face.surface(), Some(SurfaceRef::Cylinder { radius, .. }) if radius == 0.05),
             "region sub-faces keep their cylinder claim"
         );
     }
@@ -233,7 +233,7 @@ fn follow_deboss_on_cylinder() {
     let inner = e
         .faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { radius, .. }) if (radius - 0.049).abs() < 1e-15))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { radius, .. }) if (radius - 0.049).abs() < 1e-15))
         .count();
     assert_eq!(
         inner,
@@ -469,7 +469,7 @@ fn a_circle_projected_through_a_cylinder_leaves_a_smooth_round_hole() {
     );
     assert!(
         e.faces().values().any(
-            |f| matches!(f.surface, Some(SurfaceRef::Cylinder { radius, .. })
+            |f| matches!(f.surface(), Some(SurfaceRef::Cylinder { radius, .. })
             if (radius - 0.05).abs() < 1e-12)
         ),
         "the hole's wall claims the drawn circle's cylinder"

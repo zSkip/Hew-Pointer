@@ -189,7 +189,7 @@ below.
   other shapes, bosses, recesses, or holes adopts them — they move with it,
   and deleting it leaves them on the face; a shape holding a boss or
   recess cannot slide until that is undone. Circles and arcs drawn on a face keep their
-  circle on the solid's edges (per-edge `Edge::curve` claims through
+  circle on the solid's edges (per-edge `EdgeArcs::curve` claims through
   `split_face_with_curves` / `split_face_inner_with_curves`, an arc's
   facets claimed and its closing lines plain), offer center and quadrant
   snaps like curves on the ground, and push or pull into smooth walls

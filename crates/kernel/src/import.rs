@@ -72,15 +72,15 @@ impl MeshRecipe {
         &self,
         materials: &[crate::material::FaceMaterial],
     ) -> Result<crate::topo::Object, crate::error::TopologyError> {
-        let frames: Vec<Option<UvFrame>> = (0..self.faces.len())
-            .map(|i| self.face_uv_frames.get(i).copied().flatten())
-            .collect();
+        // A face past the end of `face_uv_frames` gets none: the builder
+        // reads each face's frame with `get`, so the list is passed as it
+        // is rather than padded to one 72-byte entry per face.
         crate::topo::Object::from_polygons_with_holes_import(
             &self.positions,
             &self.faces,
             &self.face_holes,
             materials,
-            &frames,
+            &self.face_uv_frames,
         )
     }
 
@@ -125,7 +125,7 @@ pub fn rings_trace_each_other(a: &[Point3], b: &[Point3], tol: f64) -> bool {
 /// Source claims about a mesh's edges and faces, applied by `ingest` to the
 /// built Object wherever they hold — claims are metadata, never geometry,
 /// so one the built Object contradicts is dropped (the map-or-drop
-/// contract of [`SurfaceRef`] and [`crate::topo::Edge::curve`]), never
+/// contract of [`SurfaceRef`] and [`crate::topo::EdgeArcs::curve`]), never
 /// forced. Positions name edges, since healing may renumber vertices; an
 /// endpoint matches the built vertex within the Object's planarity
 /// tolerance.

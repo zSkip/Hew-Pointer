@@ -120,6 +120,13 @@ pub enum ExportError {
     /// A selection root holds more leaf placements than one occurrence
     /// walk lists (`Document::occurrences`'s cap).
     TooManyOccurrences,
+    /// Writing the file would need more memory than is left
+    /// ([`kernel::memory`]): refused before anything is tessellated, with
+    /// the triangle count the estimate was made from when there is one.
+    TooLarge {
+        /// The triangles the export would write.
+        triangles: Option<usize>,
+    },
 }
 
 impl ExportError {
@@ -133,6 +140,7 @@ impl ExportError {
             ExportError::StlIntegrity(_) => "export_failed",
             ExportError::UnsupportedFormat(_) => "host_capability_missing",
             ExportError::TooManyOccurrences => "too_many_occurrences",
+            ExportError::TooLarge { .. } => "export_too_large",
         }
     }
 
@@ -153,7 +161,119 @@ impl ExportError {
             ExportError::TooManyOccurrences => {
                 "That selection holds more placed parts than one export can list. Select fewer parts.".to_string()
             }
+            ExportError::TooLarge {
+                triangles: Some(n),
+            } => format!(
+                "There isn't enough memory left to write this model ({} triangles). Reduce or split the model and try again.",
+                thousands(*n)
+            ),
+            ExportError::TooLarge { triangles: None } => {
+                "There isn't enough memory left to write this model. Reduce or split the model and try again.".to_string()
+            }
         }
+    }
+}
+
+/// `n` with a comma between each group of three digits.
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+// --------------------------------------------------------------- memory
+
+/// What a writer holds at its peak per exported triangle, and its largest
+/// single buffer per triangle ([`ensure_room`]).
+#[derive(Clone, Copy)]
+struct Cost {
+    per_triangle: usize,
+    largest_per_triangle: usize,
+}
+
+/// 3MF: one solid's soup and weld while the model is built, then the
+/// welded model and the package written into it (90 to 100 bytes a
+/// triangle for meter coordinates written in full, the largest buffer).
+/// Measured on the WebAssembly build at 165 bytes a triangle.
+const COST_3MF: Cost = Cost {
+    per_triangle: 180,
+    largest_per_triangle: 110,
+};
+
+/// STL: every exported triangle's corners (72 bytes, the largest buffer)
+/// and a flag, then the largest solid's topology check or the output (50).
+/// Measured at 72 to 106 bytes a triangle on WebAssembly, 161 natively.
+const COST_STL: Cost = Cost {
+    per_triangle: 180,
+    largest_per_triangle: 72,
+};
+
+/// GLB and USDZ: every solid collected with its colors, materials and UVs
+/// (about 120 bytes a triangle), then the welded buffers and the file.
+const COST_FULL: Cost = Cost {
+    per_triangle: 260,
+    largest_per_triangle: 72,
+};
+
+/// Refuses [`ExportError::TooLarge`] when writing `roots` at `cost`, plus
+/// `extra` bytes the package carries as they are, cannot fit in the
+/// memory left ([`kernel::memory::has_room`]). Walks the same leaves the
+/// writer will, counting each object's stored triangles
+/// ([`kernel::Object::triangle_count`]; a Smooth surface's by its level);
+/// curves re-faceted finer than stored add more.
+fn ensure_room(
+    doc: &Document,
+    roots: &[RenderRoot],
+    solids_only: bool,
+    whole: bool,
+    cages: bool,
+    cost: Cost,
+    extra: usize,
+) -> Result<(), ExportError> {
+    let mut seen = BTreeSet::new();
+    let mut triangles = 0usize;
+    for root in roots {
+        for (member, _, _) in root_leaves(doc, root, (!whole).then_some(&mut seen))?.leaves {
+            if solids_only && !doc.object_solid(member) {
+                continue;
+            }
+            let Some(obj) = doc.object(member) else {
+                continue;
+            };
+            let stored = obj.triangle_count();
+            let level = u32::from(doc.smooth_level(member));
+            // Each level splits a face into quads (an n-gon into n, then
+            // each quad into four), two triangles a quad.
+            let count = if level == 0 || cages {
+                stored
+            } else {
+                stored
+                    .saturating_mul(6)
+                    .saturating_mul(4usize.saturating_pow(level - 1))
+            };
+            triangles = triangles.saturating_add(count);
+        }
+    }
+    let need = kernel::memory::Need::new(
+        triangles
+            .saturating_mul(cost.per_triangle)
+            .saturating_add(extra),
+        triangles
+            .saturating_mul(cost.largest_per_triangle)
+            .saturating_add(extra),
+    );
+    if kernel::memory::has_room(need) {
+        Ok(())
+    } else {
+        Err(ExportError::TooLarge {
+            triangles: Some(triangles),
+        })
     }
 }
 
@@ -234,9 +354,9 @@ fn export_roots(
     match format {
         "stl" => stl_from_roots(doc, roots, segments_per_turn, solids_only, whole, cages),
         "3mf" => {
-            let solids =
-                collect_export_solids(doc, roots, segments_per_turn, solids_only, whole, cages)?;
-            write_3mf(&solids, doc.materials()).ok_or(ExportError::NothingToExport)
+            let model =
+                build_3mf_model(doc, roots, segments_per_turn, solids_only, whole, cages, 0)?;
+            write_3mf(&model)?.ok_or(ExportError::NothingToExport)
         }
         "glb" | "gltf" => {
             let solids =
@@ -395,7 +515,8 @@ fn object_triangles(
 /// plus one resolved color/material/UV-pair per triangle (module doc,
 /// "Materials"): `colors` and `materials` have one entry per triangle;
 /// `uvs` has one `[u, v]` per vertex (3 per triangle, same winding order as
-/// `triangles`).
+/// `triangles`). A solid collected without UVs ([`Detail::Colors`]) leaves
+/// `uvs` empty.
 pub(crate) struct ExportSolid {
     pub name: String,
     pub triangles: Vec<f64>,
@@ -445,7 +566,7 @@ fn resolve_uv(
     p: Point3,
 ) -> [f32; 2] {
     let face = &object.faces()[fid];
-    if let Some(frame) = face.uv_frame {
+    if let Some(frame) = face.uv_frame() {
         let uv = frame.apply(p);
         return [uv[0] as f32, uv[1] as f32];
     }
@@ -475,10 +596,19 @@ fn resolve_triangle_materials(
     face_ids: &[FaceId],
     vertex_order: [usize; 3],
     inherited: Option<MaterialId>,
+    detail: Detail,
 ) -> (Vec<Rgba8>, Vec<Option<MaterialId>>, Vec<[f32; 2]>) {
     let tri_count = face_ids.len();
     let mut colors = Vec::with_capacity(tri_count);
     let mut materials = Vec::with_capacity(tri_count);
+    if detail == Detail::Colors {
+        for &fid in face_ids {
+            let mat_id = resolve_face_material(object, fid, inherited);
+            colors.push(resolve_color(mat_id, palette));
+            materials.push(mat_id);
+        }
+        return (colors, materials, Vec::new());
+    }
     let mut uvs = Vec::with_capacity(tri_count * 3);
     for (t, &fid) in face_ids.iter().enumerate() {
         let mat_id = resolve_face_material(object, fid, inherited);
@@ -513,7 +643,51 @@ pub(crate) fn collect_export_solids(
     whole: bool,
     cages: bool,
 ) -> Result<Vec<ExportSolid>, ExportError> {
-    let mut solids: Vec<ExportSolid> = Vec::new();
+    ensure_room(doc, roots, solids_only, whole, cages, COST_FULL, 0)?;
+    let mut solids = Vec::new();
+    for_each_export_solid(
+        doc,
+        roots,
+        segments_per_turn,
+        solids_only,
+        whole,
+        cages,
+        Detail::Full,
+        |solid| {
+            solids.push(solid);
+            Ok(())
+        },
+    )?;
+    Ok(solids)
+}
+
+/// What a collected [`ExportSolid`] carries besides its triangles.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Detail {
+    /// Colors, materials and UVs (GLB, USDZ).
+    Full,
+    /// Colors and materials, no UVs (3MF, which names each `<base>` after
+    /// its material and writes no texture coordinates).
+    Colors,
+}
+
+/// [`collect_export_solids`] one solid at a time: `f` gets each solid as
+/// soon as it is built, in the same order and with the same names, so a
+/// writer can reduce it and let it go before the next one is tessellated.
+/// Stops at the first error `f` or the walk returns.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn for_each_export_solid(
+    doc: &Document,
+    roots: &[RenderRoot],
+    segments_per_turn: u32,
+    solids_only: bool,
+    whole: bool,
+    cages: bool,
+    detail: Detail,
+    mut f: impl FnMut(ExportSolid) -> Result<(), ExportError>,
+) -> Result<(), ExportError> {
+    // Solids handed to `f` so far (the `Object N` ordinal).
+    let mut count = 0usize;
     let palette = doc.materials();
     let mut seen = BTreeSet::new();
 
@@ -536,8 +710,16 @@ pub(crate) fn collect_export_solids(
             if raw.is_empty() {
                 continue;
             }
-            let (colors, materials, uvs) =
-                resolve_triangle_materials(obj, palette, &raw, &face_ids, vertex_order, inherited);
+            let (colors, materials, uvs) = resolve_triangle_materials(
+                obj,
+                palette,
+                &raw,
+                &face_ids,
+                vertex_order,
+                inherited,
+                detail,
+            );
+            drop(face_ids);
             let triangles = match pose {
                 None => raw,
                 Some(pose) => {
@@ -567,21 +749,22 @@ pub(crate) fn collect_export_solids(
             let name = match (&instance_name, &member_name) {
                 (Some(Some(inst)), _) if !multi_member => inst.clone(),
                 (Some(Some(inst)), Some(member_n)) => format!("{inst} · {member_n}"),
-                (Some(Some(inst)), None) => format!("{inst} · Object {}", solids.len() + 1),
+                (Some(Some(inst)), None) => format!("{inst} · Object {}", count + 1),
                 (_, Some(member_n)) => member_n.clone(),
-                (_, None) => format!("Object {}", solids.len() + 1),
+                (_, None) => format!("Object {}", count + 1),
             };
-            solids.push(ExportSolid {
+            count += 1;
+            f(ExportSolid {
                 name,
                 triangles,
                 colors,
                 materials,
                 uvs,
-            });
+            })?;
         }
     }
 
-    Ok(solids)
+    Ok(())
 }
 
 // -------------------------------------------------------------------- STL
@@ -632,6 +815,7 @@ fn stl_from_roots(
     whole: bool,
     cages: bool,
 ) -> Result<Vec<u8>, ExportError> {
+    ensure_room(doc, roots, solids_only, whole, cages, COST_STL, 0)?;
     let mut soup: Vec<f64> = Vec::new();
     // Validate each claimed solid independently: STL flattens the scene,
     // and independent objects/placements may legitimately share coordinates.
@@ -665,6 +849,8 @@ fn stl_from_roots(
                         soup.push(p.z);
                     }
                 }
+            } else if soup.is_empty() {
+                soup = triangles;
             } else {
                 soup.extend(triangles);
             }
@@ -681,10 +867,16 @@ fn stl_from_roots(
     write_binary_stl(&soup, &closed_ranges)
 }
 
-/// One triangle as converted for STL: its written normal (`None` if it is a
-/// sliver the file cannot hold), the `f32` corners, and the exact millimeter
-/// `f64` corners it came from.
-type ConvertedTriangle = (Option<[f32; 3]>, [f32; 9], [f64; 9]);
+/// Meters to the millimeters STL is written in.
+const METERS_TO_MM: f64 = 1000.0;
+
+/// A soup triangle as STL writes it: its exact millimeter `f64` corners and
+/// their `f32` rounding.
+fn stl_corners(tri: &[f64]) -> ([f64; 9], [f32; 9]) {
+    let mm: [f64; 9] = std::array::from_fn(|i| tri[i] * METERS_TO_MM);
+    let verts: [f32; 9] = std::array::from_fn(|i| mm[i] as f32);
+    (mm, verts)
+}
 
 /// Millimeter-scale binary STL layout (docs/design/api-kernel-map.md §6.3;
 /// mirrors `app/src/io/exporters/stlExport.ts`'s `writeBinaryStl`): an
@@ -708,29 +900,55 @@ fn write_binary_stl(
     closed_ranges: &[std::ops::Range<usize>],
 ) -> Result<Vec<u8>, ExportError> {
     const HEADER_BYTES: usize = 80;
-    const METERS_TO_MM: f64 = 1000.0;
     if !soup.len().is_multiple_of(9) {
         return Err(ExportError::StlIntegrity("incomplete triangle data"));
     }
-    // Every triangle, in soup order: `Some(normal)` if it is written,
-    // `None` if it is a sliver the file cannot hold. Solid ranges index
-    // this list, so closure is judged on the mesh as converted, slivers
-    // included: omitting one covers no area, so it cannot open a solid.
-    let mut converted: Vec<ConvertedTriangle> = Vec::with_capacity(soup.len() / 9);
+    // Every triangle, in soup order: written, or a sliver the file cannot
+    // hold. Solid ranges index the soup, so closure is judged on the mesh
+    // as converted, slivers included: omitting one covers no area, so it
+    // cannot open a solid. The corners are converted again where needed
+    // (the same arithmetic), never kept for the whole soup.
+    let mut written: Vec<bool> = Vec::with_capacity(soup.len() / 9);
     for tri in soup.chunks_exact(9) {
-        let mm: [f64; 9] = std::array::from_fn(|i| tri[i] * METERS_TO_MM);
-        let verts: [f32; 9] = std::array::from_fn(|i| mm[i] as f32);
+        let (mm, verts) = stl_corners(tri);
         if mm.iter().any(|v| !v.is_finite()) || verts.iter().any(|v| !v.is_finite()) {
             return Err(ExportError::StlIntegrity(
                 "non-finite or overflowing coordinates",
             ));
         }
-        if !writes_forward(&mm) {
-            // Collinear or flipped by rounding: it has no area the file
-            // can hold, so it is left out rather than written backwards.
-            converted.push((None, verts, mm));
-            continue;
-        }
+        // Collinear or flipped by rounding: it has no area the file can
+        // hold, so it is left out rather than written backwards.
+        written.push(writes_forward(&mm));
+    }
+    for range in closed_ranges {
+        check_solid_survives_conversion(&soup[range.start * 9..range.end * 9])?;
+    }
+    let kept = written.iter().filter(|&&w| w).count();
+    let count = u32::try_from(kept)
+        .map_err(|_| ExportError::StlIntegrity("too many triangles for binary STL"))?;
+
+    let version = env!("CARGO_PKG_VERSION");
+    let header_text = format!("Hew {version} binary STL, millimeters");
+    let mut header = [0u8; HEADER_BYTES];
+    for (i, b) in header_text.bytes().take(HEADER_BYTES).enumerate() {
+        header[i] = b & 0x7f;
+    }
+
+    let bytes = kept
+        .checked_mul(50)
+        .and_then(|n| n.checked_add(HEADER_BYTES + 4))
+        .ok_or(ExportError::StlIntegrity(
+            "binary STL exceeds the addressable file size",
+        ))?;
+    let mut out = Vec::new();
+    out.try_reserve_exact(bytes)
+        .map_err(|_| ExportError::TooLarge {
+            triangles: Some(kept),
+        })?;
+    out.extend_from_slice(&header);
+    out.extend_from_slice(&count.to_le_bytes());
+    for (tri, _) in soup.chunks_exact(9).zip(&written).filter(|(_, w)| **w) {
+        let (_, verts) = stl_corners(tri);
         let point = |i: usize| {
             Point3::new(
                 f64::from(verts[i]),
@@ -745,36 +963,6 @@ fn write_binary_stl(
             (cross.y / length) as f32,
             (cross.z / length) as f32,
         ];
-        converted.push((Some(normal), verts, mm));
-    }
-    for range in closed_ranges {
-        check_solid_survives_conversion(&converted[range.clone()])?;
-    }
-    let kept: Vec<([f32; 3], [f32; 9])> = converted
-        .into_iter()
-        .filter_map(|(normal, verts, _)| normal.map(|n| (n, verts)))
-        .collect();
-    let count = u32::try_from(kept.len())
-        .map_err(|_| ExportError::StlIntegrity("too many triangles for binary STL"))?;
-
-    let version = env!("CARGO_PKG_VERSION");
-    let header_text = format!("Hew {version} binary STL, millimeters");
-    let mut header = [0u8; HEADER_BYTES];
-    for (i, b) in header_text.bytes().take(HEADER_BYTES).enumerate() {
-        header[i] = b & 0x7f;
-    }
-
-    let bytes = kept
-        .len()
-        .checked_mul(50)
-        .and_then(|n| n.checked_add(HEADER_BYTES + 4))
-        .ok_or(ExportError::StlIntegrity(
-            "binary STL exceeds the addressable file size",
-        ))?;
-    let mut out = Vec::with_capacity(bytes);
-    out.extend_from_slice(&header);
-    out.extend_from_slice(&count.to_le_bytes());
-    for (normal, verts) in &kept {
         for c in normal {
             out.extend_from_slice(&c.to_le_bytes());
         }
@@ -793,41 +981,37 @@ fn write_binary_stl(
 /// rounding is the model's own, not the file format's; it is exported as
 /// the solid is, like every other writer does. Matching is by exact
 /// position with signed zero canonicalized: no epsilon welding, no repair.
-fn check_solid_survives_conversion(triangles: &[ConvertedTriangle]) -> Result<(), ExportError> {
-    let key32 = |c: &[f32; 9], i: usize| -> [u64; 3] {
+/// `soup` is the solid's triangles (meters, 9 `f64`s each).
+fn check_solid_survives_conversion(soup: &[f64]) -> Result<(), ExportError> {
+    let count = soup.len() / 9;
+    let tri = |t: usize| &soup[t * 9..t * 9 + 9];
+    let key32 = |t: usize, i: usize| -> [u64; 3] {
+        let (_, c) = stl_corners(tri(t));
         std::array::from_fn(|j| {
             let v = c[i * 3 + j];
             if v == 0.0 { 0 } else { u64::from(v.to_bits()) }
         })
     };
-    let key64 = |c: &[f64; 9], i: usize| -> [u64; 3] {
+    let key64 = |t: usize, i: usize| -> [u64; 3] {
+        let (c, _) = stl_corners(tri(t));
         std::array::from_fn(|j| {
             let v = c[i * 3 + j];
             if v == 0.0 { 0 } else { v.to_bits() }
         })
     };
-    let after: Vec<[[u64; 3]; 3]> = triangles
-        .iter()
-        .map(|(_, c, _)| [key32(c, 0), key32(c, 1), key32(c, 2)])
-        .collect();
-    if let Some(reason) = solid_topology_defect(&after) {
-        let before: Vec<[[u64; 3]; 3]> = triangles
-            .iter()
-            .map(|(_, _, c)| [key64(c, 0), key64(c, 1), key64(c, 2)])
-            .collect();
-        if solid_topology_defect(&before).is_none() {
-            return Err(ExportError::StlIntegrity(reason));
-        }
+    if let Some(reason) = solid_topology_defect(count, key32)
+        && solid_topology_defect(count, key64).is_none()
+    {
+        return Err(ExportError::StlIntegrity(reason));
     }
     // A tetrahedral shell can flatten after rounding without collapsing
     // any individual triangle. Compare the oriented volume in a local
     // frame before and after: it must keep its sign and not vanish.
-    let exact = six_volume(triangles.iter().map(|(_, _, c)| *c));
-    let written = six_volume(
-        triangles
-            .iter()
-            .map(|(_, c, _)| std::array::from_fn(|i| f64::from(c[i]))),
-    );
+    let exact = six_volume((0..count).map(|t| stl_corners(tri(t)).0));
+    let written = six_volume((0..count).map(|t| {
+        let (_, c) = stl_corners(tri(t));
+        std::array::from_fn(|i| f64::from(c[i]))
+    }));
     if !written.is_finite()
         || (exact != 0.0 && (written == 0.0 || written.signum() != exact.signum()))
     {
@@ -856,53 +1040,85 @@ fn six_volume(triangles: impl Iterator<Item = [f64; 9]>) -> f64 {
 /// vertex's fan is one connected piece. A triangle with two coincident
 /// corners has collapsed to a segment and is not counted: its two
 /// neighbors across the surviving edges meet each other.
-fn solid_topology_defect(triangles: &[[[u64; 3]; 3]]) -> Option<&'static str> {
-    type Vertex = [u64; 3];
-    let mut edges = BTreeMap::<(Vertex, Vertex), (Option<usize>, Option<usize>)>::new();
-    if triangles.is_empty() {
+fn solid_topology_defect(
+    count: usize,
+    corner: impl Fn(usize, usize) -> [u64; 3],
+) -> Option<&'static str> {
+    if count == 0 {
         return Some("a solid has no triangles");
     }
-    for (face, vertices) in triangles.iter().enumerate() {
-        if vertices[0] == vertices[1] || vertices[1] == vertices[2] || vertices[2] == vertices[0] {
+    // Each distinct position as a number, so edges are pairs of numbers.
+    let mut ids: BTreeMap<[u64; 3], u32> = BTreeMap::new();
+    let triangles: Vec<[u32; 3]> = (0..count)
+        .map(|t| {
+            std::array::from_fn(|i| {
+                let next = ids.len() as u32;
+                *ids.entry(corner(t, i)).or_insert(next)
+            })
+        })
+        .collect();
+    drop(ids);
+    // Every use of an edge by a non-degenerate triangle: (low, high,
+    // forward, face), `forward` when the triangle runs low to high.
+    let mut uses: Vec<(u32, u32, bool, u32)> = Vec::with_capacity(3 * count);
+    for (face, v) in triangles.iter().enumerate() {
+        if v[0] == v[1] || v[1] == v[2] || v[2] == v[0] {
             continue;
         }
         for i in 0..3 {
-            let (a, b) = (vertices[i], vertices[(i + 1) % 3]);
-            let (key, forward) = if a < b {
-                ((a, b), true)
+            let (a, b) = (v[i], v[(i + 1) % 3]);
+            uses.push(if a < b {
+                (a, b, true, face as u32)
             } else {
-                ((b, a), false)
-            };
-            let uses = edges.entry(key).or_default();
-            let slot = if forward { &mut uses.0 } else { &mut uses.1 };
-            if slot.replace(face).is_some() {
-                return Some("non-manifold or inconsistently oriented edges");
-            }
+                (b, a, false, face as u32)
+            });
         }
     }
-    let mut links = BTreeMap::<Vertex, Vec<(usize, usize)>>::new();
-    for ((a, b), (forward, reverse)) in edges {
-        let (Some(f), Some(r)) = (forward, reverse) else {
+    drop(triangles);
+    uses.sort_unstable();
+    // One triangle per edge and direction.
+    if uses
+        .windows(2)
+        .any(|w| (w[0].0, w[0].1, w[0].2) == (w[1].0, w[1].1, w[1].2))
+    {
+        return Some("non-manifold or inconsistently oriented edges");
+    }
+    // Every edge used both ways; each joins its two triangles at both of
+    // its ends: (vertex, forward face, reverse face).
+    let mut links: Vec<(u32, u32, u32)> = Vec::with_capacity(uses.len());
+    for pair in uses.chunk_by(|x, y| (x.0, x.1) == (y.0, y.1)) {
+        let &[(a, b, false, reverse), (_, _, true, forward)] = pair else {
             return Some("a solid has unmatched boundary edges after conversion");
         };
-        for vertex in [a, b] {
-            links.entry(vertex).or_default().push((f, r));
-        }
+        links.push((a, forward, reverse));
+        links.push((b, forward, reverse));
     }
-    for pairs in links.values() {
-        let mut neighbors = BTreeMap::<usize, Vec<usize>>::new();
-        for &(a, b) in pairs {
-            neighbors.entry(a).or_default().push(b);
-            neighbors.entry(b).or_default().push(a);
+    drop(uses);
+    links.sort_unstable();
+    // Around each vertex, its triangles are one fan: joined into a single
+    // group by the edges they share there.
+    for fan in links.chunk_by(|x, y| x.0 == y.0) {
+        let mut faces: Vec<u32> = fan.iter().flat_map(|&(_, f, r)| [f, r]).collect();
+        faces.sort_unstable();
+        faces.dedup();
+        let at = |f: u32| faces.binary_search(&f).expect("a face of this fan");
+        let mut parent: Vec<usize> = (0..faces.len()).collect();
+        fn root(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
         }
-        let mut pending = vec![pairs[0].0];
-        let mut visited = BTreeSet::new();
-        while let Some(face) = pending.pop() {
-            if visited.insert(face) {
-                pending.extend(&neighbors[&face]);
+        let mut groups = faces.len();
+        for &(_, f, r) in fan {
+            let (x, y) = (root(&mut parent, at(f)), root(&mut parent, at(r)));
+            if x != y {
+                parent[x] = y;
+                groups -= 1;
             }
         }
-        if visited.len() != neighbors.len() {
+        if groups != 1 {
             return Some("non-manifold vertex contact after conversion");
         }
     }
@@ -970,33 +1186,103 @@ pub fn export_3mf(
 ) -> Result<Vec<u8>, ExportError> {
     let normalized = doc.session_closed();
     let doc: &Document = &normalized;
-    let solids = collect_export_solids(
+    let model = build_3mf_model(
         doc,
         &world_roots(doc),
         segments_per_turn,
         solids_only,
         true,
         cages,
+        0,
     )?;
-    write_3mf(&solids, doc.materials()).ok_or(ExportError::NothingToExport)
+    write_3mf(&model)?.ok_or(ExportError::NothingToExport)
 }
 
+/// One `<object>` of the model part.
 struct Model3mfObject {
     id: u32,
     name: String,
     default_color: u32,
-    vertex_lines: Vec<String>,
-    triangle_lines: Vec<String>,
+    /// The welded vertices in first-use order, each as its first corner.
+    vertices: Vec<[f64; 3]>,
+    /// The kept triangles: three vertex indices and the palette index.
+    triangles: Vec<[u32; 4]>,
+}
+
+/// Everything the model part lists: its objects and the document-wide
+/// [`BasePalette`] they index.
+#[derive(Default)]
+pub(crate) struct Model3mf {
+    objects: Vec<Model3mfObject>,
+    palette: BasePalette,
+}
+
+impl Model3mf {
+    /// Welds `solid` into the next `<object>` and lets it go (see
+    /// [`build_3mf_objects`]). A solid with no triangle left adds nothing.
+    /// `materials` names each `<base>` (see [`BasePalette`]).
+    fn add(&mut self, solid: &ExportSolid, materials: &MaterialPalette) {
+        let id = 2 + self.objects.len() as u32; // 1 is the basematerials group.
+        if let Some(object) = build_3mf_object(solid, id, &mut self.palette, materials) {
+            self.objects.push(object);
+        }
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.objects.is_empty()
+    }
+
+    /// The triangles the model part lists.
+    fn triangle_count(&self) -> usize {
+        self.objects.iter().map(|o| o.triangles.len()).sum()
+    }
+}
+
+/// The 3MF model of `roots`, built one solid at a time (each solid's
+/// triangle soup is freed as soon as it is welded). Refuses
+/// [`ExportError::TooLarge`] first when the model and a package carrying
+/// `extra` more bytes cannot fit in the memory left.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_3mf_model(
+    doc: &Document,
+    roots: &[RenderRoot],
+    segments_per_turn: u32,
+    solids_only: bool,
+    whole: bool,
+    cages: bool,
+    extra: usize,
+) -> Result<Model3mf, ExportError> {
+    ensure_room(doc, roots, solids_only, whole, cages, COST_3MF, extra)?;
+    let materials = doc.materials();
+    let mut model = Model3mf::default();
+    for_each_export_solid(
+        doc,
+        roots,
+        segments_per_turn,
+        solids_only,
+        whole,
+        cages,
+        Detail::Colors,
+        |solid| {
+            model.add(&solid, materials);
+            Ok(())
+        },
+    )?;
+    Ok(model)
 }
 
 /// Format one coordinate for XML: plain decimal (Rust's `f64` `Display`
 /// never emits scientific notation, unlike JS's — no exponent-expansion
 /// fallback needed the way `threeMfExport.ts`'s `formatCoord` requires),
-/// `-0` normalized to `0`. Vertex welding keys on this string, so the
-/// formatting IS the identity.
-fn format_coord(n: f64) -> String {
-    let n = if n == 0.0 { 0.0 } else { n };
-    format!("{n}")
+/// `-0` normalized to `0`. Vertices weld exactly when this text agrees
+/// ([`build_3mf_object`]).
+struct CoordText(f64);
+
+impl std::fmt::Display for CoordText {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let n = if self.0 == 0.0 { 0.0 } else { self.0 };
+        write!(f, "{n}")
+    }
 }
 
 fn xml_escape(s: &str) -> String {
@@ -1075,128 +1361,192 @@ impl BasePalette {
 /// (forbidden by the 3MF spec) — mirrors `writeThreeMf`'s per-part loop.
 /// Also returns the document-wide [`BasePalette`] every object's
 /// `pid`/`pindex` and triangle-level `p1` override reference.
-fn build_3mf_objects(
-    solids: &[ExportSolid],
-    materials: &MaterialPalette,
-) -> (Vec<Model3mfObject>, BasePalette) {
-    let mut objects = Vec::new();
-    let mut palette = BasePalette::default();
-    let mut next_id = 2u32; // 1 is the basematerials group; objects follow.
-
+#[cfg(test)]
+fn build_3mf_objects(solids: &[ExportSolid], materials: &MaterialPalette) -> Model3mf {
+    let mut model = Model3mf::default();
     for solid in solids {
-        let tri_count = solid.triangles.len() / 9;
-        if tri_count == 0 {
-            continue;
-        }
-
-        let mut vertex_index: BTreeMap<String, u32> = BTreeMap::new();
-        let mut vertex_lines: Vec<String> = Vec::new();
-        let mut triangle_lines: Vec<String> = Vec::new();
-        let mut default_color: Option<u32> = None;
-
-        let mut vertex_at = |o: usize| -> u32 {
-            let x = format_coord(solid.triangles[o]);
-            let y = format_coord(solid.triangles[o + 1]);
-            let z = format_coord(solid.triangles[o + 2]);
-            let key = format!("{x} {y} {z}");
-            if let Some(&i) = vertex_index.get(&key) {
-                return i;
-            }
-            let i = vertex_lines.len() as u32;
-            vertex_index.insert(key, i);
-            vertex_lines.push(format!("<vertex x=\"{x}\" y=\"{y}\" z=\"{z}\"/>"));
-            i
-        };
-
-        for t in 0..tri_count {
-            let o = t * 9;
-            let v1 = vertex_at(o);
-            let v2 = vertex_at(o + 3);
-            let v3 = vertex_at(o + 6);
-            if v1 == v2 || v2 == v3 || v1 == v3 {
-                // A collapsed triangle carries no geometry — skipped, never
-                // repaired (rule 4 in spirit).
-                continue;
-            }
-            let name = solid.materials[t]
-                .and_then(|id| materials.get(id))
-                .map(|m| m.name.as_str());
-            let color = palette.index_of(solid.colors[t], name);
-            let default = *default_color.get_or_insert(color);
-            let p1 = if color == default {
-                String::new()
-            } else {
-                format!(" p1=\"{color}\"")
-            };
-            triangle_lines.push(format!(
-                "<triangle v1=\"{v1}\" v2=\"{v2}\" v3=\"{v3}\"{p1}/>"
-            ));
-        }
-
-        if triangle_lines.is_empty() {
-            continue;
-        }
-        objects.push(Model3mfObject {
-            id: next_id,
-            name: solid.name.clone(),
-            default_color: default_color.expect("a non-empty object saw at least one triangle"),
-            vertex_lines,
-            triangle_lines,
-        });
-        next_id += 1;
+        model.add(solid, materials);
     }
-
-    (objects, palette)
+    model
 }
 
-fn render_3mf_model(objects: &[Model3mfObject], palette: &BasePalette, version: &str) -> String {
-    let mut lines: Vec<String> = Vec::new();
-    lines.push("<?xml version=\"1.0\" encoding=\"UTF-8\"?>".to_string());
-    lines.push(format!(
+/// One solid's `<object>` (see [`build_3mf_objects`]), or `None` when no
+/// triangle survives. Vertices weld when their written text is the same
+/// ([`format_coord`]): the same `f64`, `-0` and `0` alike — the key is the
+/// coordinates' bits with zero and NaN made canonical, which is exactly
+/// when their decimal text agrees. Indices are given in order of first
+/// use, collapsed triangles included; a triangle's color enters `palette`
+/// only once it is kept.
+fn build_3mf_object(
+    solid: &ExportSolid,
+    id: u32,
+    palette: &mut BasePalette,
+    materials: &MaterialPalette,
+) -> Option<Model3mfObject> {
+    let tri_count = solid.triangles.len() / 9;
+    if tri_count == 0 {
+        return None;
+    }
+    let bits = |n: f64| -> u64 {
+        if n == 0.0 {
+            0
+        } else if n.is_nan() {
+            f64::NAN.to_bits()
+        } else {
+            n.to_bits()
+        }
+    };
+    let mut vertex_index: BTreeMap<[u64; 3], u32> = BTreeMap::new();
+    let mut vertices: Vec<[f64; 3]> = Vec::new();
+    let mut triangles: Vec<[u32; 4]> = Vec::with_capacity(tri_count);
+    let mut default_color: Option<u32> = None;
+    let mut vertex_at = |o: usize| -> u32 {
+        let p = [
+            solid.triangles[o],
+            solid.triangles[o + 1],
+            solid.triangles[o + 2],
+        ];
+        *vertex_index
+            .entry([bits(p[0]), bits(p[1]), bits(p[2])])
+            .or_insert_with(|| {
+                vertices.push(p);
+                vertices.len() as u32 - 1
+            })
+    };
+    for t in 0..tri_count {
+        let o = t * 9;
+        let v1 = vertex_at(o);
+        let v2 = vertex_at(o + 3);
+        let v3 = vertex_at(o + 6);
+        if v1 == v2 || v2 == v3 || v1 == v3 {
+            // A collapsed triangle carries no geometry — skipped, never
+            // repaired (rule 4 in spirit).
+            continue;
+        }
+        let name = solid
+            .materials
+            .get(t)
+            .copied()
+            .flatten()
+            .and_then(|id| materials.get(id))
+            .map(|m| m.name.as_str());
+        let color = palette.index_of(solid.colors[t], name);
+        default_color.get_or_insert(color);
+        triangles.push([v1, v2, v3, color]);
+    }
+    drop(vertex_index);
+    if triangles.is_empty() {
+        return None;
+    }
+    vertices.shrink_to_fit();
+    Some(Model3mfObject {
+        id,
+        name: solid.name.clone(),
+        default_color: default_color.expect("a non-empty object saw at least one triangle"),
+        vertices,
+        triangles,
+    })
+}
+
+/// Writes the model part's XML: one line per element, each ending in a
+/// newline. [`model_3mf_len`] is its exact length.
+fn write_3mf_model(
+    w: &mut impl std::io::Write,
+    model: &Model3mf,
+    version: &str,
+) -> std::io::Result<()> {
+    writeln!(w, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")?;
+    writeln!(
+        w,
         "<model unit=\"meter\" xml:lang=\"und\" xmlns=\"{MODEL_3MF_XMLNS}\">"
-    ));
-    lines.push(format!(
+    )?;
+    writeln!(
+        w,
         " <metadata name=\"Application\">Hew {}</metadata>",
         xml_escape(version)
-    ));
-    lines.push(" <resources>".to_string());
-    lines.push("  <basematerials id=\"1\">".to_string());
-    for (name, hex) in &palette.order {
-        lines.push(format!(
-            "   <base name=\"{}\" displaycolor=\"{hex}\"/>",
-            xml_escape(name)
-        ));
+    )?;
+    writeln!(w, " <resources>")?;
+    // A model with no objects (a document with nothing to mesh) lists no
+    // palette either: its resources are empty.
+    if !model.objects.is_empty() {
+        writeln!(w, "  <basematerials id=\"1\">")?;
+        for (name, hex) in &model.palette.order {
+            writeln!(
+                w,
+                "   <base name=\"{}\" displaycolor=\"{hex}\"/>",
+                xml_escape(name)
+            )?;
+        }
+        writeln!(w, "  </basematerials>")?;
     }
-    lines.push("  </basematerials>".to_string());
-    for obj in objects {
-        lines.push(format!(
+    for obj in &model.objects {
+        writeln!(
+            w,
             "  <object id=\"{}\" type=\"model\" name=\"{}\" pid=\"1\" pindex=\"{}\">",
             obj.id,
             xml_escape(&obj.name),
             obj.default_color,
-        ));
-        lines.push("   <mesh>".to_string());
-        lines.push("    <vertices>".to_string());
-        for v in &obj.vertex_lines {
-            lines.push(format!("     {v}"));
+        )?;
+        writeln!(w, "   <mesh>")?;
+        writeln!(w, "    <vertices>")?;
+        for &[x, y, z] in &obj.vertices {
+            writeln!(
+                w,
+                "     <vertex x=\"{}\" y=\"{}\" z=\"{}\"/>",
+                CoordText(x),
+                CoordText(y),
+                CoordText(z)
+            )?;
         }
-        lines.push("    </vertices>".to_string());
-        lines.push("    <triangles>".to_string());
-        for t in &obj.triangle_lines {
-            lines.push(format!("     {t}"));
+        writeln!(w, "    </vertices>")?;
+        writeln!(w, "    <triangles>")?;
+        for &[v1, v2, v3, color] in &obj.triangles {
+            if color == obj.default_color {
+                writeln!(w, "     <triangle v1=\"{v1}\" v2=\"{v2}\" v3=\"{v3}\"/>")?;
+            } else {
+                writeln!(
+                    w,
+                    "     <triangle v1=\"{v1}\" v2=\"{v2}\" v3=\"{v3}\" p1=\"{color}\"/>"
+                )?;
+            }
         }
-        lines.push("    </triangles>".to_string());
-        lines.push("   </mesh>".to_string());
-        lines.push("  </object>".to_string());
+        writeln!(w, "    </triangles>")?;
+        writeln!(w, "   </mesh>")?;
+        writeln!(w, "  </object>")?;
     }
-    lines.push(" </resources>".to_string());
-    lines.push(" <build>".to_string());
-    for obj in objects {
-        lines.push(format!("  <item objectid=\"{}\"/>", obj.id));
+    writeln!(w, " </resources>")?;
+    writeln!(w, " <build>")?;
+    for obj in &model.objects {
+        writeln!(w, "  <item objectid=\"{}\"/>", obj.id)?;
     }
-    lines.push(" </build>".to_string());
-    lines.push("</model>".to_string());
-    lines.join("\n") + "\n"
+    writeln!(w, " </build>")?;
+    writeln!(w, "</model>")
+}
+
+/// The length of what [`write_3mf_model`] writes, found by writing it to
+/// a counter: the package is then sized up front.
+fn model_3mf_len(model: &Model3mf, version: &str) -> usize {
+    struct Count(usize);
+    impl std::io::Write for Count {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0 += buf.len();
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let mut count = Count(0);
+    write_3mf_model(&mut count, model, version).expect("counting cannot fail");
+    count.0
+}
+
+/// The model part's text as one string (tests).
+#[cfg(test)]
+fn render_3mf_model(model: &Model3mf, version: &str) -> String {
+    let mut out = Vec::new();
+    write_3mf_model(&mut out, model, version).expect("writing to memory cannot fail");
+    String::from_utf8(out).expect("the model part is UTF-8")
 }
 
 const CONTENT_TYPES_XML: &str = concat!(
@@ -1236,6 +1586,20 @@ fn zip_add_stored_entry<W: std::io::Write + std::io::Seek>(
     data: &[u8],
     align: u16,
 ) -> std::io::Result<()> {
+    zip_start_stored_entry(zip, name, align)?;
+    std::io::Write::write_all(zip, data)?;
+    Ok(())
+}
+
+/// Starts a stored entry exactly as [`zip_add_stored_entry`] does; its data
+/// is then written to `zip` in as many pieces as the caller likes (the
+/// entry's checksum and sizes are filled in when it ends), so the bytes are
+/// those of one `zip_add_stored_entry` with the whole data.
+fn zip_start_stored_entry<W: std::io::Write + std::io::Seek>(
+    zip: &mut zip::ZipWriter<W>,
+    name: &str,
+    align: u16,
+) -> std::io::Result<()> {
     let options = zip::write::SimpleFileOptions::default()
         .compression_method(zip::CompressionMethod::Stored)
         .last_modified_time(zip::DateTime::default())
@@ -1245,37 +1609,79 @@ fn zip_add_stored_entry<W: std::io::Write + std::io::Seek>(
         // exported bytes depend on the OS that built Hew.
         .system(zip::System::Unix)
         .with_alignment(align);
-    zip.start_file(name, options)?;
-    std::io::Write::write_all(zip, data)?;
-    Ok(())
+    Ok(zip.start_file(name, options)?)
+}
+
+/// Bytes a stored, unaligned container entry adds beside its data and its
+/// name (which appears twice): the local header (30) and the central
+/// directory record (46), with room for extra fields the writer may add.
+const ZIP_ENTRY_OVERHEAD: usize = 30 + 46 + 64;
+/// Bytes the end of a container adds: the end-of-central-directory record
+/// (22), with room for its 64-bit form.
+const ZIP_END_OVERHEAD: usize = 22 + 56 + 20 + 64;
+
+/// Writes a 3MF package: `parts` (name and bytes) in order, with the model
+/// part `3D/3dmodel.model` written from `model` after the first `before`
+/// of them. The output is sized up front from the parts, so it is never
+/// copied into a buffer that grows by doubling, and the model text goes
+/// straight into it; [`ExportError::TooLarge`] when that size cannot be
+/// allocated.
+pub(crate) fn write_3mf_package(
+    model: &Model3mf,
+    version: &str,
+    parts: &[(&str, &[u8])],
+    before: usize,
+) -> Result<Vec<u8>, ExportError> {
+    const MODEL_PART: &str = "3D/3dmodel.model";
+    let model_len = model_3mf_len(model, version);
+    let capacity = parts
+        .iter()
+        .map(|(name, data)| data.len() + 2 * name.len() + ZIP_ENTRY_OVERHEAD)
+        .sum::<usize>()
+        + model_len
+        + 2 * MODEL_PART.len()
+        + ZIP_ENTRY_OVERHEAD
+        + ZIP_END_OVERHEAD;
+    let mut buffer = Vec::<u8>::new();
+    buffer
+        .try_reserve_exact(capacity)
+        .map_err(|_| ExportError::TooLarge {
+            triangles: Some(model.triangle_count()),
+        })?;
+    let mut zip = zip::ZipWriter::new(Cursor::new(buffer));
+    for (name, data) in &parts[..before] {
+        zip_add_stored_entry(&mut zip, name, data, 1).expect("zip write must not fail");
+    }
+    zip_start_stored_entry(&mut zip, MODEL_PART, 1).expect("zip write must not fail");
+    {
+        let mut w = std::io::BufWriter::with_capacity(1 << 16, &mut zip);
+        write_3mf_model(&mut w, model, version).expect("zip write must not fail");
+        std::io::Write::flush(&mut w).expect("zip write must not fail");
+    }
+    for (name, data) in &parts[before..] {
+        zip_add_stored_entry(&mut zip, name, data, 1).expect("zip write must not fail");
+    }
+    Ok(zip.finish().expect("zip finish must not fail").into_inner())
 }
 
 /// Assembles the minimal core-spec OPC container: `[Content_Types].xml`,
 /// `_rels/.rels`, `3D/3dmodel.model` — mirrors `threeMfExport.ts`'s
 /// `writeThreeMf`'s three-entry layout. Returns `None` when no solid
 /// contributes a triangle (every object empty or fully degenerate).
-fn write_3mf(solids: &[ExportSolid], materials: &MaterialPalette) -> Option<Vec<u8>> {
-    let (objects, palette) = build_3mf_objects(solids, materials);
-    if objects.is_empty() {
-        return None;
+fn write_3mf(model: &Model3mf) -> Result<Option<Vec<u8>>, ExportError> {
+    if model.is_empty() {
+        return Ok(None);
     }
-    let version = env!("CARGO_PKG_VERSION");
-    let model = render_3mf_model(&objects, &palette, version);
-
-    let out_cursor = Cursor::new(Vec::<u8>::new());
-    let mut zip = zip::ZipWriter::new(out_cursor);
-    zip_add_stored_entry(
-        &mut zip,
-        "[Content_Types].xml",
-        CONTENT_TYPES_XML.as_bytes(),
-        1,
+    write_3mf_package(
+        model,
+        env!("CARGO_PKG_VERSION"),
+        &[
+            ("[Content_Types].xml", CONTENT_TYPES_XML.as_bytes()),
+            ("_rels/.rels", RELS_XML.as_bytes()),
+        ],
+        2,
     )
-    .expect("zip write must not fail");
-    zip_add_stored_entry(&mut zip, "_rels/.rels", RELS_XML.as_bytes(), 1)
-        .expect("zip write must not fail");
-    zip_add_stored_entry(&mut zip, "3D/3dmodel.model", model.as_bytes(), 1)
-        .expect("zip write must not fail");
-    Some(zip.finish().expect("zip finish must not fail").into_inner())
+    .map(Some)
 }
 
 // -------------------------------------------------------------------- GLB
@@ -2841,6 +3247,127 @@ mod tests {
             ExportError::UnsupportedFormat("obj".to_string()).name(),
             "host_capability_missing"
         );
+        assert_eq!(
+            ExportError::TooLarge { triangles: None }.name(),
+            "export_too_large"
+        );
+    }
+
+    // ------------------------------------------------------------- memory
+
+    /// The refusal's plain message, with and without the triangle count.
+    #[test]
+    fn too_large_says_what_to_do_in_plain_words() {
+        assert_eq!(
+            ExportError::TooLarge {
+                triangles: Some(5_000_000)
+            }
+            .message(),
+            "There isn't enough memory left to write this model (5,000,000 triangles). Reduce or split the model and try again."
+        );
+        assert_eq!(
+            ExportError::TooLarge { triangles: None }.message(),
+            "There isn't enough memory left to write this model. Reduce or split the model and try again."
+        );
+        assert_eq!(thousands(0), "0");
+        assert_eq!(thousands(999), "999");
+        assert_eq!(thousands(1000), "1,000");
+        assert_eq!(thousands(12_345_678), "12,345,678");
+    }
+
+    fn assert_too_large(result: Result<Vec<u8>, ExportError>, triangles: usize) {
+        match result {
+            Err(ExportError::TooLarge { triangles: t }) => assert_eq!(t, Some(triangles)),
+            Err(e) => panic!("expected export_too_large, got {}", e.name()),
+            Ok(_) => panic!("expected export_too_large, got a file"),
+        }
+    }
+
+    /// Every writer refuses `export_too_large` before tessellating when its
+    /// estimate (the format's bytes a triangle times the triangles it would
+    /// write) does not fit in the memory left, and writes the same file as
+    /// ever at exactly its estimate.
+    #[test]
+    fn every_format_refuses_too_large_when_memory_is_short() {
+        use kernel::memory::with_limit;
+        let doc = box_document();
+        let cases: [(&str, Cost); 4] = [
+            ("stl", COST_STL),
+            ("3mf", COST_3MF),
+            ("glb", COST_FULL),
+            ("usdz", COST_FULL),
+        ];
+        for (format, cost) in cases {
+            let need = 12 * cost.per_triangle;
+            assert_too_large(
+                with_limit(need - 1, || export(&doc, format, 0, true, false)),
+                12,
+            );
+            let fits = with_limit(need, || export(&doc, format, 0, true, false)).expect(format);
+            assert_eq!(
+                fits,
+                export(&doc, format, 0, true, false).unwrap(),
+                "{format}"
+            );
+        }
+        assert_too_large(
+            with_limit(12 * COST_3MF.per_triangle - 1, || {
+                export_3mf(&doc, 0, true, false)
+            }),
+            12,
+        );
+        assert_too_large(
+            with_limit(12 * COST_STL.per_triangle - 1, || {
+                export_stl(&doc, 0, true, false)
+            }),
+            12,
+        );
+    }
+
+    /// The document a 3MF carries is counted on top of its mesh, and a
+    /// selection export is estimated from the selection alone.
+    #[test]
+    fn the_estimate_counts_the_carried_document_and_only_the_selection() {
+        use kernel::memory::with_limit;
+        let doc = box_document();
+        let document = vec![7u8; 1000];
+        let need = 12 * COST_3MF.per_triangle + document.len();
+        assert_too_large(
+            with_limit(need - 1, || {
+                export_3mf_with_document(&doc, 0, false, false, &document)
+            }),
+            12,
+        );
+        with_limit(need, || {
+            export_3mf_with_document(&doc, 0, false, false, &document)
+        })
+        .expect("fits at its estimate");
+
+        let mut two = box_document();
+        let obj_id = two.visible_object_ids()[0];
+        let (component, first, _) = two
+            .make_component(&[kernel::NodeId::Object(obj_id)])
+            .expect("make a component from the box");
+        two.place_instance(
+            component,
+            kernel::Transform::translation(kernel::Vec3::new(2.0, 0.0, 0.0)),
+        )
+        .expect("place a second instance");
+        // Both placements are written, so both are counted.
+        assert_too_large(
+            with_limit(24 * COST_STL.per_triangle - 1, || {
+                export(&two, "stl", 0, true, false)
+            }),
+            24,
+        );
+        let selection = [two
+            .occurrence_at(&[], kernel::NodeId::Instance(first))
+            .map(RenderRoot::Occurrence)
+            .expect("the first placement")];
+        with_limit(12 * COST_STL.per_triangle, || {
+            export_occurrences(&two, &selection, "stl", 0, true, false)
+        })
+        .expect("one placement fits in one placement's room");
     }
 
     // ---------------------------------------------------------------- 3MF
@@ -3032,15 +3559,15 @@ mod tests {
             materials: vec![None, None],
             uvs: vec![[0.0; 2]; 6],
         };
-        let (objects, palette) = build_3mf_objects(&[solid], &MaterialPalette::default());
-        assert_eq!(objects.len(), 1);
+        let model = build_3mf_objects(&[solid], &MaterialPalette::default());
+        assert_eq!(model.objects.len(), 1);
         assert_eq!(
-            objects[0].triangle_lines.len(),
+            model.objects[0].triangles.len(),
             1,
             "the collapsed triangle is dropped"
         );
         assert_eq!(
-            palette.order,
+            model.palette.order,
             vec![("#FF0000".to_string(), "#FF0000".to_string())],
             "the dropped triangle's blue never entered the palette"
         );
@@ -3057,11 +3584,122 @@ mod tests {
             materials: vec![None],
             uvs: vec![[0.0; 2]; 3],
         };
-        let (objects, palette) = build_3mf_objects(&[solid], &MaterialPalette::default());
-        let model = render_3mf_model(&objects, &palette, "1.2.3");
+        let model = render_3mf_model(
+            &build_3mf_objects(&[solid], &MaterialPalette::default()),
+            "1.2.3",
+        );
         assert!(
             model.contains("name=\"A&lt;B &amp; &quot;C&quot;\""),
             "{model}"
+        );
+    }
+
+    /// Corners weld when their written text agrees: `-0` writes as `0`, so
+    /// a corner at `-0` is the vertex at `0`, and a shared corner is one
+    /// vertex; indices follow first use.
+    #[test]
+    fn build_3mf_objects_welds_corners_whose_text_agrees() {
+        #[rustfmt::skip]
+        let triangles = vec![
+            0.0, 0.0, 0.0,  1.0, 0.0, 0.0,  0.0, 1.0, 0.0,
+            -0.0, -0.0, 0.0,  0.0, -1.0, 0.0,  1.0, 0.0, 0.0,
+        ];
+        let solid = ExportSolid {
+            name: "Part".to_string(),
+            triangles,
+            colors: vec![Rgba8::rgb(0xff, 0x00, 0x00); 2],
+            materials: Vec::new(),
+            uvs: Vec::new(),
+        };
+        let model = build_3mf_objects(&[solid], &MaterialPalette::default());
+        let object = &model.objects[0];
+        assert_eq!(object.vertices.len(), 4);
+        assert_eq!(object.triangles, vec![[0, 1, 2, 0], [0, 3, 1, 0]]);
+        let text = render_3mf_model(&model, "1.2.3");
+        assert_eq!(text.matches("<vertex ").count(), 4, "{text}");
+        assert!(text.contains("<vertex x=\"0\" y=\"0\" z=\"0\"/>"), "{text}");
+        assert!(!text.contains("-0\""), "{text}");
+    }
+
+    /// The package is sized from the model part's counted length, which is
+    /// exactly what is written: with escaped names, several colors and an
+    /// empty model alike.
+    #[test]
+    fn model_3mf_len_is_the_written_length() {
+        let mut materials = MaterialPalette::default();
+        let named = materials.insert(Material::solid(
+            "PLA <\"Red\"> & co",
+            Rgba8::rgb(0xff, 0, 0),
+        ));
+        let solid = |name: &str, colors: Vec<Rgba8>| ExportSolid {
+            name: name.to_string(),
+            triangles: vec![
+                0.0, 0.0, 0.0, 1.5, 0.0, 0.0, 0.0, 1.0, 0.0, //
+                0.0, 0.0, 0.0, 0.0, -1.0, 0.0, 1.5, 0.0, 0.0,
+            ],
+            colors,
+            materials: Vec::new(),
+            uvs: Vec::new(),
+        };
+        let red = Rgba8::rgb(0xff, 0x00, 0x00);
+        let clear = Rgba8::rgba(0x00, 0x80, 0xff, 0x40);
+        let mut first = solid("A<B & \"C\"", vec![red, clear]);
+        first.materials = vec![Some(named), None];
+        let model = build_3mf_objects(&[first, solid("D", vec![clear, clear])], &materials);
+        let text = render_3mf_model(&model, "1.2.3");
+        assert!(text.contains(" p1=\""), "{text}");
+        assert!(
+            text.contains("<base name=\"PLA &lt;&quot;Red&quot;&gt; &amp; co\""),
+            "{text}"
+        );
+        assert_eq!(model_3mf_len(&model, "1.2.3"), text.len());
+        let empty = Model3mf::default();
+        assert_eq!(
+            model_3mf_len(&empty, "1.2.3"),
+            render_3mf_model(&empty, "1.2.3").len()
+        );
+    }
+
+    /// The STL solid check's topology verdicts: a closed, consistently
+    /// wound mesh has none; a missing triangle leaves unmatched edges; a
+    /// triangle wound the wrong way uses an edge in its neighbour's
+    /// direction; two closed solids touching at one vertex pinch it.
+    #[test]
+    fn solid_topology_defect_names_each_defect() {
+        let check = |tris: &[[usize; 3]], points: &[[u64; 3]]| {
+            solid_topology_defect(tris.len(), |t, i| points[tris[t][i]])
+        };
+        let points: Vec<[u64; 3]> = vec![
+            [0, 0, 0],
+            [1, 0, 0],
+            [0, 1, 0],
+            [0, 0, 1],
+            [1, 0, 1],
+            [0, 1, 1],
+            [0, 0, 2],
+        ];
+        let tet = |[a, b, c, d]: [usize; 4]| vec![[a, c, b], [a, b, d], [b, c, d], [a, d, c]];
+        let one = tet([0, 1, 2, 3]);
+        assert_eq!(check(&one, &points), None);
+        assert_eq!(
+            check(&one[..3], &points),
+            Some("a solid has unmatched boundary edges after conversion")
+        );
+        let mut flipped = one.clone();
+        flipped[0] = [0, 1, 2];
+        assert_eq!(
+            check(&flipped, &points),
+            Some("non-manifold or inconsistently oriented edges")
+        );
+        let mut touching = one.clone();
+        touching.extend(tet([3, 4, 5, 6]));
+        assert_eq!(
+            check(&touching, &points),
+            Some("non-manifold vertex contact after conversion")
+        );
+        assert_eq!(
+            solid_topology_defect(0, |_, _| [0; 3]),
+            Some("a solid has no triangles")
         );
     }
 

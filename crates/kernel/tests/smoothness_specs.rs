@@ -185,7 +185,7 @@ fn boolean_regains_cylinder_rim_claims() {
     );
     for &e in &top_rim {
         assert_eq!(
-            result.edges()[e].curve,
+            result.edge_curve(e),
             Some(CurveGeom {
                 center: p3(0.0, 0.0, h),
                 radius: r
@@ -236,7 +236,7 @@ fn tub_corners_stay_smooth_through_two_trims() {
     let mut seams = 0;
     for (eid, e) in twice.edges() {
         let Some(t) = e.twin_half_edge else { continue };
-        let face = |h| twice.faces()[twice.loops()[twice.half_edges()[h].loop_id].face].surface;
+        let face = |h| twice.faces()[twice.loops()[twice.half_edges()[h].loop_id].face].surface();
         if let (Some(a), Some(b)) = (face(e.half_edge), face(t))
             && a.same_surface(&b)
         {
@@ -308,7 +308,7 @@ fn boolean_renumbers_operand_b_blend_ids() {
     let ids: std::collections::BTreeSet<u32> = r
         .faces()
         .values()
-        .filter_map(|f| f.blend.map(|t| t.id.0))
+        .filter_map(|f| f.blend().map(|t| t.id.0))
         .collect();
     assert_eq!(
         ids,
@@ -332,7 +332,7 @@ fn non_uniform_scale_leaves_soft_seams() {
         .unwrap();
     assert_valid_solid(&cyl);
     assert!(
-        cyl.faces().values().all(|f| f.surface.is_none()),
+        cyl.faces().values().all(|f| f.surface().is_none()),
         "claims drop"
     );
     let soft = cyl.edges().values().filter(|e| e.soft).count();
@@ -439,7 +439,7 @@ fn edge_smoothness_classification() {
         // face claims a cylinder, the other is a plane, tangent there.
         let faces = |e: EdgeId| {
             let ed = o.edges()[e];
-            let f = |h| o.faces()[o.loops()[o.half_edges()[h].loop_id].face].surface;
+            let f = |h| o.faces()[o.loops()[o.half_edges()[h].loop_id].face].surface();
             (f(ed.half_edge), f(ed.twin_half_edge.unwrap()))
         };
         match faces(e) {

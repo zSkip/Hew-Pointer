@@ -493,6 +493,9 @@ pub fn ui_copy(code: &str) -> Option<&'static str> {
         "DanglingReference" => "This file is damaged and can't be opened.",
         "MissingAsset" => "This file is missing some of its data and can't be opened.",
         "Geometry" => "This file's geometry data is damaged and can't be opened.",
+        "TooLarge" => {
+            "There isn't enough memory left to open this document. Close other documents and try again."
+        }
         "DegenerateVector" => {
             "That direction is too short to work with. Pick points further apart."
         }

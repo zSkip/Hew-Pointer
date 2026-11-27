@@ -1740,11 +1740,11 @@ fn build(
         .collect();
     let uvs: Vec<_> = faces
         .iter()
-        .map(|f| attr(f).and_then(|s| s.uv_frame))
+        .map(|f| attr(f).and_then(|s| s.uv_frame()))
         .collect();
     let surfaces: Vec<_> = faces
         .iter()
-        .map(|f| attr(f).and_then(|s| s.surface))
+        .map(|f| attr(f).and_then(|s| s.surface()))
         .collect();
     let mut obj = Object::from_polygons_full(
         &positions,
@@ -1757,7 +1757,7 @@ fn build(
     )?;
     let backs: Vec<_> = faces
         .iter()
-        .map(|f| attr(f).and_then(|s| s.back_material))
+        .map(|f| attr(f).and_then(|s| s.back_material()))
         .collect();
     obj.set_built_back_materials(&backs);
     let ids: Vec<FaceId> = obj.faces.keys().collect();
@@ -2133,8 +2133,7 @@ type EdgeClaims = BTreeMap<
 
 /// Whether an edge carries anything a rebuild has to give back.
 fn edge_is_marked(obj: &Object, id: crate::ids::EdgeId) -> bool {
-    let e = &obj.edges[id];
-    e.curve.is_some() || e.polygon.is_some() || e.soft || obj.edge_attrs(id).is_some()
+    !obj.edge_arcs(id).is_empty() || obj.edges[id].soft || obj.edge_attrs(id).is_some()
 }
 
 fn claim_key(a: Point3, b: Point3) -> ClaimKey {
@@ -2151,12 +2150,13 @@ fn edge_claims(obj: &Object) -> EdgeClaims {
         .filter_map(|e| {
             let (a, b) = obj.edge_endpoints(e)?;
             let edge = &obj.edges[e];
+            let arcs = obj.edge_arcs(e);
             edge_is_marked(obj, e).then(|| {
                 (
                     claim_key(a, b),
                     (
-                        edge.curve,
-                        edge.polygon,
+                        arcs.curve,
+                        arcs.polygon,
                         edge.soft,
                         obj.edge_attrs(e).cloned(),
                     ),
@@ -2178,9 +2178,14 @@ fn apply_edge_claims(obj: &mut Object, claims: &EdgeClaims) {
             continue;
         };
         if let Some((curve, polygon, soft, attrs)) = claims.get(&claim_key(a, b)) {
+            obj.set_edge_arcs(
+                e,
+                crate::topo::EdgeArcs {
+                    curve: *curve,
+                    polygon: *polygon,
+                },
+            );
             let edge = &mut obj.edges[e];
-            edge.curve = *curve;
-            edge.polygon = *polygon;
             edge.soft = *soft && edge.twin_half_edge.is_some();
             if let Some(dict) = attrs {
                 obj.set_edge_attrs(e, dict.clone());
@@ -2212,7 +2217,12 @@ fn remapped_claims(
             (pa != pb).then(|| {
                 (
                     claim_key(pa, pb),
-                    (e.curve, e.polygon, e.soft, obj.edge_attrs(id).cloned()),
+                    (
+                        obj.edge_curve(id),
+                        obj.edge_polygon(id),
+                        e.soft,
+                        obj.edge_attrs(id).cloned(),
+                    ),
                 )
             })
         })
@@ -2229,7 +2239,7 @@ fn coplanar_pair(obj: &Object, f: FaceId, g: FaceId) -> bool {
             .loop_positions(b.outer_loop)
             .all(|p| a.plane.signed_distance(p).abs() <= tol::PLANE_DIST)
         && a.material == b.material
-        && a.back_material == b.back_material
+        && a.back_material() == b.back_material()
 }
 
 /// The hard edges of `obj` between two faces of [`coplanar_pair`], as

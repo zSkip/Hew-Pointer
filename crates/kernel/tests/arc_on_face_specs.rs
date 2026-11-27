@@ -67,7 +67,9 @@ fn arc(cx: f64, cy: f64, r: f64, a0: f64, a1: f64, n: usize) -> Vec<Point3> {
 }
 
 fn claims(obj: &Object) -> Vec<CurveGeom> {
-    obj.edges().values().filter_map(|e| e.curve).collect()
+    obj.edge_arc_entries()
+        .filter_map(|(_, a)| a.curve)
+        .collect()
 }
 
 fn claims_centered(obj: &Object, c: Point3) -> usize {
@@ -80,7 +82,7 @@ fn claims_centered(obj: &Object, c: Point3) -> usize {
 fn stamped_walls(obj: &Object) -> usize {
     obj.faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
         .count()
 }
 
@@ -208,7 +210,7 @@ fn a_segment_bosses_smooth_arc_walls_and_a_flat_chord() {
     assert_eq!(claims_centered(&obj, center), 12, "the arc's facets claim");
     let loop_claims: Vec<Option<CurveGeom>> = obj
         .loop_half_edges(obj.faces()[disk].outer_loop)
-        .map(|h| obj.edges()[obj.half_edges()[h].edge].curve)
+        .map(|h| obj.edge_curve(obj.half_edges()[h].edge))
         .collect();
     assert_eq!(loop_claims.len(), 13);
     assert_eq!(
@@ -255,10 +257,10 @@ fn a_clockwise_segment_lands_its_claims_on_the_arc_facets() {
     obj.validate().unwrap();
     // The chord is the one long edge (2·r·sin 60° ≈ 0.52); every claimed
     // edge is a short facet (2·r·sin 5° ≈ 0.052).
-    for (id, e) in obj.edges().iter() {
+    for id in obj.edges().keys() {
         let (a, b) = obj.edge_endpoints(id).unwrap();
         let len = (b - a).length();
-        if e.curve.is_some() {
+        if obj.edge_curve(id).is_some() {
             assert!(
                 len < 0.1,
                 "a claimed edge is a facet, not the chord ({len})"

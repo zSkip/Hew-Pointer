@@ -568,7 +568,7 @@ fn analytic_cylinder_metadata_survives_a_session_round_trip() {
             .expect("live")
             .faces()
             .values()
-            .find_map(|f| match f.surface {
+            .find_map(|f| match f.surface() {
                 Some(kernel::SurfaceRef::Cylinder { radius, .. }) => Some(radius),
                 _ => None,
             })

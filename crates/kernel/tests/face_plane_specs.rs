@@ -735,7 +735,10 @@ fn far_cylinder(doc: &mut Document, far: f64) -> kernel::ObjectId {
 
 /// How many faces claim an analytic surface.
 fn claimed(obj: &Object) -> usize {
-    obj.faces().values().filter(|f| f.surface.is_some()).count()
+    obj.faces()
+        .values()
+        .filter(|f| f.surface().is_some())
+        .count()
 }
 
 /// A cylinder 1,000 km out turned 0.7 rad about (1, 1, 0) once committed

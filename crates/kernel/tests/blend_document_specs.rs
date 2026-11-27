@@ -208,7 +208,7 @@ fn push_pull_grows_and_removes() {
         .unwrap()
         .faces()
         .iter()
-        .find(|(_, f)| f.blend.is_some())
+        .find(|(_, f)| f.blend().is_some())
         .unwrap()
         .0;
     doc.push_pull_blend(o, face, 1.0).unwrap();
@@ -280,7 +280,7 @@ fn logical_paint() {
     doc.paint_logical_face(o, report.new_faces[0], Some(mat))
         .unwrap();
     let obj = doc.object(o).unwrap();
-    for f in obj.faces().values().filter(|f| f.blend.is_some()) {
+    for f in obj.faces().values().filter(|f| f.blend().is_some()) {
         assert_eq!(f.material, Some(mat));
     }
     doc.undo().unwrap();
@@ -304,16 +304,16 @@ fn every_facet_of_a_rim_fillet_resizes_it_after_a_neighbor_push() {
     let curved: Vec<_> = obj
         .faces()
         .iter()
-        .filter(|(_, f)| f.surface.is_some())
+        .filter(|(_, f)| f.surface().is_some())
         .collect();
     assert!(!curved.is_empty());
     assert!(
-        curved.iter().all(|(_, f)| f.blend.is_some()),
+        curved.iter().all(|(_, f)| f.blend().is_some()),
         "every rounded facet is tagged"
     );
     let faces_before = obj.faces().len();
     for (fid, f) in obj.faces() {
-        if f.blend.is_none() {
+        if f.blend().is_none() {
             continue;
         }
         let mut d = doc.clone();
@@ -839,7 +839,7 @@ fn resize_preview_marks_the_faces_the_commit_reports() {
         let mut t: Vec<_> = obj
             .faces()
             .iter()
-            .filter_map(|(f, face)| face.blend.map(|b| (f, b.id)))
+            .filter_map(|(f, face)| face.blend().map(|b| (f, b.id)))
             .collect();
         t.sort();
         t
@@ -851,7 +851,7 @@ fn resize_preview_marks_the_faces_the_commit_reports() {
 fn tag_counts(obj: &kernel::Object) -> std::collections::BTreeMap<kernel::BlendId, usize> {
     let mut m = std::collections::BTreeMap::new();
     for face in obj.faces().values() {
-        if let Some(t) = face.blend {
+        if let Some(t) = face.blend() {
             *m.entry(t.id).or_insert(0) += 1;
         }
     }

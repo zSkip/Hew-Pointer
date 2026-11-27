@@ -252,7 +252,9 @@ fn imprinted_circle_edge_claim_round_trips_through_geometry_buffer_v5() {
     obj.split_face_inner_with_curve(top, &circle, Some(CurveGeom { center, radius }))
         .unwrap();
     assert_eq!(
-        obj.edges().values().filter(|e| e.curve.is_some()).count(),
+        obj.edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
+            .count(),
         24,
         "the imprinted circle's 24 edges carry the claim"
     );
@@ -265,14 +267,16 @@ fn imprinted_circle_edge_claim_round_trips_through_geometry_buffer_v5() {
     // The claim survives, bitwise.
     assert_eq!(
         decoded
-            .edges()
-            .values()
-            .filter(|e| e.curve.is_some())
+            .edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
             .count(),
         24,
         "the edge claim survives the geometry-buffer v5 round-trip"
     );
-    let g = decoded.edges().values().find_map(|e| e.curve).unwrap();
+    let g = decoded
+        .edge_arc_entries()
+        .find_map(|(_, a)| a.curve)
+        .unwrap();
     assert_eq!(g.radius, radius);
     assert!(g.center.approx_eq(center, tol::POINT_MERGE));
 
@@ -293,7 +297,7 @@ fn imprinted_circle_edge_claim_round_trips_through_geometry_buffer_v5() {
     let attributed = drilled
         .faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
         .count();
     assert_eq!(
         attributed, 24,
@@ -756,6 +760,27 @@ fn save_load_preserves_sketch_after_partial_consumption() {
 fn load_rejects_garbage() {
     assert!(Document::load(&[]).is_err());
     assert!(Document::load(b"not a zip at all").is_err());
+}
+
+/// A load that cannot fit in the memory left refuses `TooLarge` before
+/// reading any geometry, instead of ending the WebAssembly kernel; the
+/// estimate is [`kernel::serialize::LOAD_BYTES_PER_GEOMETRY_BYTE`] per byte
+/// of geometry entry, at most the file's own length.
+#[test]
+fn load_refuses_too_large_when_memory_is_short() {
+    let mut doc = Document::new();
+    extrude_box(&mut doc, 0.0, 0.0, 1.0, 1.0, 0.0, 1.0);
+    let bytes = doc.save();
+    assert_eq!(
+        kernel::memory::with_limit(0, || Document::load(&bytes)).expect_err("no room"),
+        kernel::LoadError::TooLarge
+    );
+    let room = bytes.len() * kernel::serialize::LOAD_BYTES_PER_GEOMETRY_BYTE;
+    let loaded = kernel::memory::with_limit(room, || Document::load(&bytes)).expect("fits");
+    assert_eq!(loaded.visible_object_ids().len(), 1);
+    // A document with no geometry needs no room for it.
+    let empty = Document::new().save();
+    kernel::memory::with_limit(0, || Document::load(&empty)).expect("nothing to hold");
 }
 
 #[test]

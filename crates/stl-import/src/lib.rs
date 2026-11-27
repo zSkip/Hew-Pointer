@@ -41,6 +41,13 @@ pub enum StlError {
     /// Structurally STL but empty: zero triangles in the file, or every
     /// parsed triangle was degenerate and healed away to nothing.
     Empty,
+    /// Importing this many triangles would need more memory than is left
+    /// ([`IMPORT_BYTES_PER_TRIANGLE`] each, [`kernel::memory`]): refused
+    /// before anything is parsed.
+    TooLarge {
+        /// The file's triangle count ([`parse::triangle_count`]).
+        triangles: usize,
+    },
 }
 
 impl std::fmt::Display for StlError {
@@ -48,11 +55,48 @@ impl std::fmt::Display for StlError {
         match self {
             StlError::Parse(_) => write!(f, "This file isn't a valid STL."),
             StlError::Empty => write!(f, "This STL is empty."),
+            StlError::TooLarge { triangles } => write!(
+                f,
+                "This STL has {} triangles, more than there is memory left to import. Reduce it in a mesh tool (decimate it) and import it again.",
+                thousands(*triangles)
+            ),
         }
     }
 }
 
 impl std::error::Error for StlError {}
+
+/// `n` with a comma between each group of three digits.
+fn thousands(n: usize) -> String {
+    let digits = n.to_string();
+    let mut out = String::with_capacity(digits.len() + digits.len() / 3);
+    for (i, c) in digits.chars().enumerate() {
+        if i > 0 && (digits.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// What importing one triangle holds at the import's peak: the parsed
+/// soup, the weld and heal, the kernel object and, in the app, the render
+/// mesh built right after. Measured on the WebAssembly build (about 650 to
+/// 700 bytes from 1M to 5M triangles) with a margin; a 64-bit build needs
+/// less (561).
+pub const IMPORT_BYTES_PER_TRIANGLE: usize = 720;
+
+/// The largest single buffer an import allocates per triangle: the parsed
+/// corners (three `Point3`s).
+const IMPORT_LARGEST_PER_TRIANGLE: usize = 72;
+
+/// What importing `triangles` needs at its peak ([`IMPORT_BYTES_PER_TRIANGLE`]).
+pub fn import_need(triangles: usize) -> kernel::memory::Need {
+    kernel::memory::Need::new(
+        triangles.saturating_mul(IMPORT_BYTES_PER_TRIANGLE),
+        triangles.saturating_mul(IMPORT_LARGEST_PER_TRIANGLE),
+    )
+}
 
 /// A parsed STL, ready for `Document::ingest`.
 pub struct StlScene {
@@ -86,12 +130,18 @@ pub struct StlScene {
 /// fake-closed (DEVELOPMENT.md rule 4) — exactly like `.dae`/`.gltf` import.
 ///
 /// On success returns a [`StlScene`]. A totally unparseable file, or one
-/// that reduces to zero triangles, returns `Err(StlError)`.
+/// that reduces to zero triangles, returns `Err(StlError)`; one whose
+/// import cannot fit in the memory left ([`import_need`]) returns
+/// [`StlError::TooLarge`] before parsing anything.
 pub fn import(
     stl_bytes: &[u8],
     unit_scale: f64,
     name_hint: Option<&str>,
 ) -> Result<StlScene, StlError> {
+    let triangles = parse::triangle_count(stl_bytes);
+    if !kernel::memory::has_room(import_need(triangles)) {
+        return Err(StlError::TooLarge { triangles });
+    }
     let (raw, mut warnings) = parse::parse(stl_bytes)?;
     if raw.faces.is_empty() {
         return Err(StlError::Empty);

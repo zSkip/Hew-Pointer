@@ -277,7 +277,7 @@ fn inscribed_result(phase: f64) -> (Wall, FaceId, CurveGeom) {
 fn stamped_walls(obj: &Object) -> usize {
     obj.faces()
         .values()
-        .filter(|f| matches!(f.surface, Some(SurfaceRef::Cylinder { .. })))
+        .filter(|f| matches!(f.surface(), Some(SurfaceRef::Cylinder { .. })))
         .count()
 }
 

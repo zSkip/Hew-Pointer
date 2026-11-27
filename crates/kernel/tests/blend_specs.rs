@@ -47,13 +47,13 @@ fn blend_ok(obj: &Object, s: &BlendSpec) -> (Object, BlendReport) {
     assert!(!report.new_faces.is_empty());
     for &f in &report.new_faces {
         let face = &after.faces()[f];
-        let tag = face.blend.expect("new faces carry the blend tag");
+        let tag = face.blend().expect("new faces carry the blend tag");
         assert_eq!(tag.id, id);
         assert!(matches!(
             tag.role,
             kernel::BlendRole::Strip | kernel::BlendRole::Corner
         ));
-        if let Some(claim) = face.surface {
+        if let Some(claim) = face.surface() {
             for p in after.loop_positions(face.outer_loop) {
                 assert!(
                     claim.distance(p).abs() <= kernel::tol::PLANE_DIST,
@@ -66,7 +66,7 @@ fn blend_ok(obj: &Object, s: &BlendSpec) -> (Object, BlendReport) {
     let new: BTreeSet<FaceId> = report.new_faces.iter().copied().collect();
     for (f, face) in after.faces() {
         if !new.contains(&f) {
-            assert!(face.blend.is_none());
+            assert!(face.blend().is_none());
         }
     }
     (after, report)
@@ -113,12 +113,15 @@ fn box_edge_fillet_counts() {
     let claims: Vec<SurfaceRef> = report
         .new_faces
         .iter()
-        .map(|&f| after.faces()[f].surface.expect("each facet claims"))
+        .map(|&f| after.faces()[f].surface().expect("each facet claims"))
         .collect();
     assert!(matches!(claims[0], SurfaceRef::Cylinder { .. }));
     assert!(claims.iter().all(|c| c.same_surface(&claims[0])));
     // The run-outs into both end faces carry arc curves.
-    let curved = after.edges().values().filter(|e| e.curve.is_some()).count();
+    let curved = after
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
     assert_eq!(curved, 12);
     for r in rails(&after, &report.new_faces, Vec3::new(1.0, 0.0, 0.0)) {
         assert_eq!(after.edge_smoothness(r), EdgeSmoothness::Tangent);
@@ -179,7 +182,7 @@ fn wedge_fillets_at_60_and_120() {
             .any(|v| (v.position.x - setback).abs() < 1e-12 && v.position.y.abs() < 1e-12);
         assert!(has_rail, "theta {theta}");
         // The arc sweeps π − θ: the claims' normals at the rails differ by it.
-        let claim = after.faces()[report.new_faces[0]].surface.unwrap();
+        let claim = after.faces()[report.new_faces[0]].surface().unwrap();
         assert!(matches!(claim, SurfaceRef::Cylinder { .. }));
         let delta = signed_volume(&obj) - signed_volume(&after);
         assert!((delta - fillet_area(r, theta, 8)).abs() <= 1e-12, "{delta}");
@@ -198,7 +201,10 @@ fn concave_inner_edge_fillet() {
         (delta - fillet_area(0.1, FRAC_PI_2, 6)).abs() <= 1e-12,
         "material is added: {delta}"
     );
-    let curved = after.edges().values().filter(|e| e.curve.is_some()).count();
+    let curved = after
+        .edge_arc_entries()
+        .filter(|(_, a)| a.curve.is_some())
+        .count();
     assert_eq!(curved, 12, "run-outs into the top and bottom");
 }
 
@@ -839,7 +845,7 @@ fn non_coaxial_cylinders_refused() {
         .keys()
         .find(|&e| {
             let (x, y) = obj.edge_faces_for_test(e).unwrap();
-            match (obj.faces()[x].surface, obj.faces()[y].surface) {
+            match (obj.faces()[x].surface(), obj.faces()[y].surface()) {
                 (
                     Some(SurfaceRef::Cylinder { axis: p, .. }),
                     Some(SurfaceRef::Cylinder { axis: q, .. }),

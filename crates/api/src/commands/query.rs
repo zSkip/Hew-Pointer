@@ -836,7 +836,7 @@ fn face_description(ctx: &Ctx, face: locate::FaceRef) -> Result<Value, CmdError>
     let material = f
         .material
         .and_then(|m| public_of(ctx, &EntityRef::Material(m)));
-    let surface = f.surface.map(|s| match s {
+    let surface = f.surface().map(|s| match s {
         SurfaceRef::Cylinder {
             axis_point,
             axis,
@@ -887,10 +887,10 @@ fn face_description(ctx: &Ctx, face: locate::FaceRef) -> Result<Value, CmdError>
             .collect::<Vec<_>>(),
         "material": material,
         "surface": surface,
-        "texture_pins": texture_pins_json(f.uv_frame, &f.plane),
+        "texture_pins": texture_pins_json(f.uv_frame(), &f.plane),
     });
     // A face of a fillet, chamfer or profile blend names it (additive).
-    if let Some(tag) = f.blend {
+    if let Some(tag) = f.blend() {
         description["blend"] = json!({
             "id": tag.id.0,
             "kind": match tag.kind {

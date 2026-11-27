@@ -425,7 +425,11 @@ pub fn multiset_match(a: &[Rings], b: &[Rings], either_way: bool) -> bool {
 pub fn objects_equivalent(x: &Object, y: &Object) -> bool {
     let xr: Vec<Rings> = x.faces().keys().map(|f| face_rings(x, f)).collect();
     let yr: Vec<Rings> = y.faces().keys().map(|f| face_rings(y, f)).collect();
-    let claims = |o: &Object| o.edges().values().filter(|e| e.curve.is_some()).count();
+    let claims = |o: &Object| {
+        o.edge_arc_entries()
+            .filter(|(_, a)| a.curve.is_some())
+            .count()
+    };
     multiset_match(&xr, &yr, false) && claims(x) == claims(y)
 }
 
@@ -913,9 +917,8 @@ pub fn region_face_in(
 
 /// Claims on the object centered at `c` with radius `r`.
 pub fn claims_on(obj: &Object, g: CurveGeom) -> usize {
-    obj.edges()
-        .values()
-        .filter_map(|e| e.curve)
+    obj.edge_arc_entries()
+        .filter_map(|(_, a)| a.curve)
         .filter(|c| {
             c.center.approx_eq(g.center, tol::POINT_MERGE) && (c.radius - g.radius).abs() < 1e-15
         })

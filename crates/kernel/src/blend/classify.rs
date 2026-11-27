@@ -97,7 +97,7 @@ pub(crate) fn info_for(obj: &Object, edge: EdgeId, a: FaceId) -> Result<EdgeInfo
 /// catalogue.
 fn edge_kind(obj: &Object, edge: EdgeId, a: FaceId, b: FaceId, d: Vec3) -> Option<EdgeKind> {
     use crate::topo::SurfaceRef;
-    let (sa, sb) = (obj.faces()[a].surface, obj.faces()[b].surface);
+    let (sa, sb) = (obj.faces()[a].surface(), obj.faces()[b].surface());
     if sa.is_none() && sb.is_none() {
         return Some(EdgeKind::PlanePlane);
     }
@@ -231,7 +231,7 @@ pub(crate) fn classify(obj: &Object, spec: &BlendSpec) -> Result<Vec<EdgeInfo>, 
         // which side is primary.
         if info.kind == EdgeKind::AlongAxis
             && spec.primary.is_none()
-            && obj.faces()[info.a].surface.is_some()
+            && obj.faces()[info.a].surface().is_some()
         {
             info = info_for(obj, e, info.b)?;
         }

@@ -585,7 +585,9 @@ fn capture(before: &Object, after: &Object, id: BlendId, spec: &BlendSpec) -> Op
     let fresh: Vec<(FaceId, Vec<Vec<Point3>>)> = after
         .faces()
         .iter()
-        .filter(|(c, cf)| !before.faces().contains_key(*c) && !cf.blend.is_some_and(|t| t.id == id))
+        .filter(|(c, cf)| {
+            !before.faces().contains_key(*c) && !cf.blend().is_some_and(|t| t.id == id)
+        })
         .map(|(c, _)| (c, rings(after, c)))
         .collect();
     // Every (fresh, replaced) pair on one plane, best first: most positions
@@ -691,8 +693,8 @@ fn capture(before: &Object, after: &Object, id: BlendId, spec: &BlendSpec) -> Op
             meta: EdgeMeta {
                 soft: edge.soft,
                 crease: edge.crease,
-                curve: edge.curve,
-                polygon: edge.polygon,
+                curve: before.edge_curve(e),
+                polygon: before.edge_polygon(e),
             },
         });
     }
@@ -846,7 +848,7 @@ impl Object {
         let present: BTreeSet<BlendId> = self
             .faces
             .values()
-            .filter_map(|f| f.blend.map(|t| t.id))
+            .filter_map(|f| f.blend().map(|t| t.id))
             .collect();
         // The table is copy-on-write: write it only when a record goes, so a
         // prune that keeps everything does not copy a shared table.
@@ -935,7 +937,7 @@ impl Object {
         let tagged: BTreeSet<FaceId> = self
             .faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| t.id == id))
+            .filter(|(_, f)| f.blend().is_some_and(|t| t.id == id))
             .map(|(f, _)| f)
             .collect();
         if tagged.is_empty() {
@@ -1190,7 +1192,7 @@ impl Object {
         let tagged: BTreeSet<FaceId> = self
             .faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| t.id == id))
+            .filter(|(_, f)| f.blend().is_some_and(|t| t.id == id))
             .map(|(f, _)| f)
             .collect();
         if tagged.is_empty() {
@@ -1199,7 +1201,7 @@ impl Object {
         let mut later: Vec<(u32, BlendId)> = self
             .faces_around_blend(&tagged, true)
             .iter()
-            .filter_map(|&f| self.faces()[f].blend.map(|t| t.id))
+            .filter_map(|&f| self.faces()[f].blend().map(|t| t.id))
             .filter(|&j| j != id)
             .filter_map(|j| self.blend_records.get(&j).map(|r| (r.seq, j)))
             .filter(|&(seq, _)| seq > rec.seq)
@@ -1219,7 +1221,7 @@ impl Object {
             if !cur
                 .faces()
                 .values()
-                .any(|f| f.blend.is_some_and(|t| t.id == j))
+                .any(|f| f.blend().is_some_and(|t| t.id == j))
             {
                 continue;
             }

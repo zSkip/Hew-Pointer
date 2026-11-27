@@ -202,7 +202,7 @@ fn same_marks(x: &Object, y: &Object, tolerance: f64) -> bool {
                 .chain(e.twin_half_edge)
                 .any(|h| {
                     o.faces()[o.loops()[o.half_edges()[h].loop_id].face]
-                        .blend
+                        .blend()
                         .is_some()
                 })
         };
@@ -291,7 +291,7 @@ impl Object {
 
     /// The blend id of a tagged face.
     pub fn blend_of_face(&self, face: FaceId) -> Option<BlendId> {
-        self.faces().get(face).and_then(|f| f.blend).map(|t| t.id)
+        self.faces().get(face).and_then(|f| f.blend()).map(|t| t.id)
     }
 
     /// Every blend on the object, ascending id, each verified (pure; its
@@ -300,7 +300,7 @@ impl Object {
         FEATURE_SCANS.with(|c| c.set(c.get() + 1));
         let mut by_id: BTreeMap<BlendId, (BlendKind, Vec<FaceId>)> = BTreeMap::new();
         for (fid, f) in self.faces() {
-            if let Some(t) = f.blend {
+            if let Some(t) = f.blend() {
                 by_id
                     .entry(t.id)
                     .or_insert((t.kind, Vec::new()))
@@ -322,7 +322,7 @@ impl Object {
                 });
                 let size = match &restored {
                     Ok(r) => Some(r.size),
-                    Err(_) => faces.iter().find_map(|&f| match self.faces()[f].surface {
+                    Err(_) => faces.iter().find_map(|&f| match self.faces()[f].surface() {
                         Some(SurfaceRef::Cylinder { radius, .. }) => Some(radius),
                         Some(SurfaceRef::Torus { minor_radius, .. }) => Some(minor_radius),
                         Some(SurfaceRef::Sphere { radius, .. }) => Some(radius),
@@ -356,7 +356,7 @@ impl Object {
                     let region: BTreeSet<FaceId> = self
                         .faces()
                         .iter()
-                        .filter(|(_, f)| f.blend.is_some_and(|t| t.id == id))
+                        .filter(|(_, f)| f.blend().is_some_and(|t| t.id == id))
                         .map(|(fid, _)| fid)
                         .collect();
                     let size = match &u.spec.profile {
@@ -387,14 +387,14 @@ impl Object {
         let region: BTreeSet<FaceId> = self
             .faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| t.id == id))
+            .filter(|(_, f)| f.blend().is_some_and(|t| t.id == id))
             .map(|(fid, _)| fid)
             .collect();
         if region.is_empty() {
             return Err(BlendError::UnknownBlend);
         }
         let kind = self.faces()[*region.iter().next().expect("non-empty")]
-            .blend
+            .blend()
             .expect("tagged")
             .kind;
         let plan = super::restore::restoration(self, &region)?;
@@ -448,7 +448,7 @@ impl Object {
             .copied()
             .filter(|&f| {
                 self.faces()[f]
-                    .blend
+                    .blend()
                     .is_some_and(|t| t.role == BlendRole::Strip)
             })
             .collect();
@@ -466,7 +466,7 @@ impl Object {
             // where a strip meets an end face never are.
             let tapered = strips
                 .iter()
-                .any(|&f| matches!(self.faces()[f].surface, Some(SurfaceRef::Cone { .. })));
+                .any(|&f| matches!(self.faces()[f].surface(), Some(SurfaceRef::Cone { .. })));
             let parallel = if tapered {
                 tol::BLEND_RAIL_PARALLEL_TAPERED
             } else {
@@ -531,12 +531,12 @@ impl Object {
         let ends = chain_ends(&restored, &edges);
         let has_runout = region.iter().any(|&f| {
             self.faces()[f]
-                .blend
+                .blend()
                 .is_some_and(|t| t.role == BlendRole::Runout)
         });
         let tapered = region
             .iter()
-            .any(|&f| matches!(self.faces()[f].surface, Some(SurfaceRef::Cone { .. })))
+            .any(|&f| matches!(self.faces()[f].surface(), Some(SurfaceRef::Cone { .. })))
             && kind == BlendKind::Fillet;
         if let (true, Some((a, b, _))) = (has_runout, ends) {
             let (da, db) = (self.stop_at(&region, a, b), self.stop_at(&region, b, a));
@@ -613,7 +613,7 @@ impl Object {
             .iter()
             .filter(|&&f| {
                 self.faces()[f]
-                    .blend
+                    .blend()
                     .is_some_and(|t| t.role == BlendRole::Runout)
             })
             .filter_map(|&f| {
@@ -660,10 +660,12 @@ impl Object {
 
     /// A bullnose strip's radius.
     fn bullnose_radius(&self, region: &BTreeSet<FaceId>) -> Option<f64> {
-        region.iter().find_map(|&f| match self.faces()[f].surface {
-            Some(SurfaceRef::Cylinder { radius, .. }) => Some(radius),
-            _ => None,
-        })
+        region
+            .iter()
+            .find_map(|&f| match self.faces()[f].surface() {
+                Some(SurfaceRef::Cylinder { radius, .. }) => Some(radius),
+                _ => None,
+            })
     }
 
     /// The profile that re-creates blend `region` on the restored `edges`
@@ -684,7 +686,7 @@ impl Object {
             .copied()
             .filter(|&f| {
                 self.faces()[f]
-                    .blend
+                    .blend()
                     .is_some_and(|t| t.role == BlendRole::Strip)
             })
             .collect();
@@ -785,7 +787,7 @@ impl Object {
             BlendKind::Fillet => {
                 let claim = strips
                     .iter()
-                    .find_map(|&s| self.faces()[s].surface)
+                    .find_map(|&s| self.faces()[s].surface())
                     .ok_or(modified)?;
                 let (r, axis_dist) = match claim {
                     SurfaceRef::Cylinder {
@@ -881,7 +883,7 @@ impl Object {
         let b = norm[n][1];
         // Arc hints per facet from claims.
         let arc_of = |f: FaceId| -> Option<([f64; 2], SurfaceRef)> {
-            match self.faces()[f].surface {
+            match self.faces()[f].surface() {
                 Some(c @ SurfaceRef::Cylinder { axis_point, .. }) => {
                     let q = uv(axis_point);
                     Some(([q[0] / width, q[1] / width], c))
@@ -994,7 +996,7 @@ impl Object {
         report.new_faces = object
             .faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| report.blends.contains(&t.id)))
+            .filter(|(_, f)| f.blend().is_some_and(|t| report.blends.contains(&t.id)))
             .map(|(id, _)| id)
             .collect();
         report
@@ -1181,7 +1183,7 @@ impl Object {
             if !cur
                 .faces()
                 .values()
-                .any(|f| f.blend.is_some_and(|t| t.id == id))
+                .any(|f| f.blend().is_some_and(|t| t.id == id))
             {
                 // Already off, ahead of an earlier blend of this face.
                 continue;
@@ -1316,7 +1318,7 @@ impl CornerResolve {
             if !cur
                 .faces()
                 .values()
-                .any(|f| f.blend.is_some_and(|t| t.id == id))
+                .any(|f| f.blend().is_some_and(|t| t.id == id))
             {
                 // Already off, as a later blend of one restored before it.
                 continue;
@@ -1415,7 +1417,7 @@ impl CornerResolve {
         let new_faces: Vec<FaceId> = cur
             .faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| blends.contains(&t.id)))
+            .filter(|(_, f)| f.blend().is_some_and(|t| blends.contains(&t.id)))
             .map(|(id, _)| id)
             .collect();
         Ok((

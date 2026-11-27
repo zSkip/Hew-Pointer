@@ -495,7 +495,7 @@ impl Object {
         let claimed = |f: FaceId| {
             self.faces()
                 .get(f)
-                .and_then(|face| face.surface)
+                .and_then(|face| face.surface())
                 .and_then(|s| s.normal_at(at))
                 .is_some()
         };
@@ -645,7 +645,7 @@ impl Object {
         let plain = |f: FaceId| {
             self.faces()
                 .get(f)
-                .is_some_and(|x| x.surface.is_none() && x.blend.is_none())
+                .is_some_and(|x| x.surface().is_none() && x.blend().is_none())
         };
         let generated_seam = |x: EdgeId| {
             self.edges().get(x).is_some_and(|edge| edge.soft)
@@ -916,7 +916,7 @@ impl Object {
         let new_faces: Vec<FaceId> = o2
             .faces()
             .iter()
-            .filter(|(_, f)| f.blend.is_some_and(|t| blends.contains(&t.id)))
+            .filter(|(_, f)| f.blend().is_some_and(|t| blends.contains(&t.id)))
             .map(|(id, _)| id)
             .collect();
         Ok((
@@ -1248,11 +1248,11 @@ mod tests {
         let (a, b) = obj.edge_faces(edge).unwrap();
         for f in [a, b] {
             let n = obj.faces[f].plane.normal();
-            obj.faces[f].surface = Some(SurfaceRef::Cylinder {
+            obj.faces[f].set_surface(Some(SurfaceRef::Cylinder {
                 axis_point: at - n * 2.0,
                 axis: Vec3::new(0.0, 0.0, 1.0),
                 radius: 2.0,
-            });
+            }));
         }
     }
 
@@ -1293,11 +1293,11 @@ mod tests {
         let at = Point3::new(1.0, 0.0, 0.0);
         let (a, b) = scan.edge_faces(crease).unwrap();
         for f in [a, b] {
-            scan.faces[f].surface = Some(SurfaceRef::Cylinder {
+            scan.faces[f].set_surface(Some(SurfaceRef::Cylinder {
                 axis_point: Point3::new(1.0, 2.0, 0.0),
                 axis: Vec3::new(0.0, 0.0, 1.0),
                 radius: 2.0,
-            });
+            }));
         }
         let e = BlendError::UnsupportedVertex { at };
         assert_eq!(
