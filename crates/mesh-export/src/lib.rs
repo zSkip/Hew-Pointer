@@ -236,7 +236,7 @@ fn export_roots(
         "3mf" => {
             let solids =
                 collect_export_solids(doc, roots, segments_per_turn, solids_only, whole, cages)?;
-            write_3mf(&solids).ok_or(ExportError::NothingToExport)
+            write_3mf(&solids, doc.materials()).ok_or(ExportError::NothingToExport)
         }
         "glb" | "gltf" => {
             let solids =
@@ -978,7 +978,7 @@ pub fn export_3mf(
         true,
         cages,
     )?;
-    write_3mf(&solids).ok_or(ExportError::NothingToExport)
+    write_3mf(&solids, doc.materials()).ok_or(ExportError::NothingToExport)
 }
 
 struct Model3mfObject {
@@ -1041,14 +1041,46 @@ impl ColorPalette {
     }
 }
 
+/// The 3MF `<basematerials>` group: one `<base>` per distinct (name, color)
+/// pair, in first-use order. A face with a material is named after it
+/// (Borpa's build materials carry their filament preset's name, which the
+/// Borpa host reads back to pick filament slots); a face without one, or a
+/// material with an empty name, is named by its color.
+#[derive(Default)]
+struct BasePalette {
+    index: BTreeMap<(String, String), u32>,
+    order: Vec<(String, String)>,
+}
+
+impl BasePalette {
+    fn index_of(&mut self, c: Rgba8, name: Option<&str>) -> u32 {
+        let hex = color_hex(c);
+        let name = match name {
+            Some(n) if !n.is_empty() => n.to_string(),
+            _ => hex.clone(),
+        };
+        let key = (name, hex);
+        if let Some(&i) = self.index.get(&key) {
+            return i;
+        }
+        let i = self.order.len() as u32;
+        self.index.insert(key.clone(), i);
+        self.order.push(key);
+        i
+    }
+}
+
 /// Builds one `<object>` per solid, welding vertices within it and
 /// dropping triangles a weld collapsed to fewer than 3 distinct vertices
 /// (forbidden by the 3MF spec) — mirrors `writeThreeMf`'s per-part loop.
-/// Also returns the document-wide [`ColorPalette`] every object's
+/// Also returns the document-wide [`BasePalette`] every object's
 /// `pid`/`pindex` and triangle-level `p1` override reference.
-fn build_3mf_objects(solids: &[ExportSolid]) -> (Vec<Model3mfObject>, ColorPalette) {
+fn build_3mf_objects(
+    solids: &[ExportSolid],
+    materials: &MaterialPalette,
+) -> (Vec<Model3mfObject>, BasePalette) {
     let mut objects = Vec::new();
-    let mut palette = ColorPalette::default();
+    let mut palette = BasePalette::default();
     let mut next_id = 2u32; // 1 is the basematerials group; objects follow.
 
     for solid in solids {
@@ -1086,7 +1118,10 @@ fn build_3mf_objects(solids: &[ExportSolid]) -> (Vec<Model3mfObject>, ColorPalet
                 // repaired (rule 4 in spirit).
                 continue;
             }
-            let color = palette.index_of(solid.colors[t]);
+            let name = solid.materials[t]
+                .and_then(|id| materials.get(id))
+                .map(|m| m.name.as_str());
+            let color = palette.index_of(solid.colors[t], name);
             let default = *default_color.get_or_insert(color);
             let p1 = if color == default {
                 String::new()
@@ -1114,7 +1149,7 @@ fn build_3mf_objects(solids: &[ExportSolid]) -> (Vec<Model3mfObject>, ColorPalet
     (objects, palette)
 }
 
-fn render_3mf_model(objects: &[Model3mfObject], palette: &ColorPalette, version: &str) -> String {
+fn render_3mf_model(objects: &[Model3mfObject], palette: &BasePalette, version: &str) -> String {
     let mut lines: Vec<String> = Vec::new();
     lines.push("<?xml version=\"1.0\" encoding=\"UTF-8\"?>".to_string());
     lines.push(format!(
@@ -1126,8 +1161,11 @@ fn render_3mf_model(objects: &[Model3mfObject], palette: &ColorPalette, version:
     ));
     lines.push(" <resources>".to_string());
     lines.push("  <basematerials id=\"1\">".to_string());
-    for hex in &palette.order {
-        lines.push(format!("   <base name=\"{hex}\" displaycolor=\"{hex}\"/>"));
+    for (name, hex) in &palette.order {
+        lines.push(format!(
+            "   <base name=\"{}\" displaycolor=\"{hex}\"/>",
+            xml_escape(name)
+        ));
     }
     lines.push("  </basematerials>".to_string());
     for obj in objects {
@@ -1216,8 +1254,8 @@ fn zip_add_stored_entry<W: std::io::Write + std::io::Seek>(
 /// `_rels/.rels`, `3D/3dmodel.model` — mirrors `threeMfExport.ts`'s
 /// `writeThreeMf`'s three-entry layout. Returns `None` when no solid
 /// contributes a triangle (every object empty or fully degenerate).
-fn write_3mf(solids: &[ExportSolid]) -> Option<Vec<u8>> {
-    let (objects, palette) = build_3mf_objects(solids);
+fn write_3mf(solids: &[ExportSolid], materials: &MaterialPalette) -> Option<Vec<u8>> {
+    let (objects, palette) = build_3mf_objects(solids, materials);
     if objects.is_empty() {
         return None;
     }
@@ -2871,11 +2909,11 @@ mod tests {
 
         assert!(model.contains("<basematerials id=\"1\">"), "{model}");
         assert!(
-            model.contains("<base name=\"#FF0000\" displaycolor=\"#FF0000\"/>"),
+            model.contains("<base name=\"Red\" displaycolor=\"#FF0000\"/>"),
             "{model}"
         );
         assert!(
-            model.contains("<base name=\"#0000FF\" displaycolor=\"#0000FF\"/>"),
+            model.contains("<base name=\"Blue\" displaycolor=\"#0000FF\"/>"),
             "{model}"
         );
         assert!(
@@ -2885,13 +2923,62 @@ mod tests {
         assert_eq!(
             model.matches("<base ").count(),
             3,
-            "3 distinct colors: {model}"
+            "2 named materials and the unpainted default: {model}"
         );
         assert!(model.contains("pid=\"1\" pindex="), "{model}");
         assert!(
             model.contains(" p1=\""),
             "at least one triangle overrides the object default: {model}"
         );
+    }
+
+    /// Two materials of the same color stay two `<base>` entries, each named
+    /// after its material: the Borpa host reads these names back to put two
+    /// filaments of one color in two filament slots.
+    #[test]
+    fn export_3mf_keeps_same_colored_materials_apart_by_name() {
+        let mut doc = Document::new();
+        let mut mesh = unit_box_mesh("Box");
+        mesh.face_materials[0] = 0;
+        mesh.face_materials[1] = 1;
+        let scene = ImportScene {
+            materials: vec![
+                Material::solid("PLA <White>", Rgba8::rgb(0xff, 0xff, 0xff)),
+                Material::solid("PETG White", Rgba8::rgb(0xff, 0xff, 0xff)),
+            ],
+            defs: Vec::new(),
+            roots: vec![ImportNode::Mesh(mesh)],
+            guides: Vec::new(),
+            tags: Vec::new(),
+            camera: None,
+            scenes: Vec::new(),
+            section: None,
+            view_style: None,
+            extra: Default::default(),
+            geo: None,
+        };
+        doc.ingest(scene, Vec::new())
+            .expect("ingest a two-material box");
+        let bytes = export_3mf(&doc, 0, true, false).expect("the box exports to 3mf");
+
+        let mut zip = zip::ZipArchive::new(Cursor::new(bytes)).expect("a valid zip");
+        let mut model = String::new();
+        std::io::Read::read_to_string(
+            &mut zip
+                .by_name("3D/3dmodel.model")
+                .expect("model entry present"),
+            &mut model,
+        )
+        .unwrap();
+        assert!(
+            model.contains("<base name=\"PLA &lt;White&gt;\" displaycolor=\"#FFFFFF\"/>"),
+            "{model}"
+        );
+        assert!(
+            model.contains("<base name=\"PETG White\" displaycolor=\"#FFFFFF\"/>"),
+            "{model}"
+        );
+        assert_eq!(model.matches("<base ").count(), 3, "{model}");
     }
 
     /// A textured face has no core-3MF representation, so it exports as its
@@ -2913,7 +3000,7 @@ mod tests {
         )
         .unwrap();
         assert!(
-            model.contains("<base name=\"#204060\" displaycolor=\"#204060\"/>"),
+            model.contains("<base name=\"Brick\" displaycolor=\"#204060\"/>"),
             "{model}"
         );
         assert!(
@@ -2945,7 +3032,7 @@ mod tests {
             materials: vec![None, None],
             uvs: vec![[0.0; 2]; 6],
         };
-        let (objects, palette) = build_3mf_objects(&[solid]);
+        let (objects, palette) = build_3mf_objects(&[solid], &MaterialPalette::default());
         assert_eq!(objects.len(), 1);
         assert_eq!(
             objects[0].triangle_lines.len(),
@@ -2954,7 +3041,7 @@ mod tests {
         );
         assert_eq!(
             palette.order,
-            vec!["#FF0000".to_string()],
+            vec![("#FF0000".to_string(), "#FF0000".to_string())],
             "the dropped triangle's blue never entered the palette"
         );
     }
@@ -2970,7 +3057,7 @@ mod tests {
             materials: vec![None],
             uvs: vec![[0.0; 2]; 3],
         };
-        let (objects, palette) = build_3mf_objects(&[solid]);
+        let (objects, palette) = build_3mf_objects(&[solid], &MaterialPalette::default());
         let model = render_3mf_model(&objects, &palette, "1.2.3");
         assert!(
             model.contains("name=\"A&lt;B &amp; &quot;C&quot;\""),

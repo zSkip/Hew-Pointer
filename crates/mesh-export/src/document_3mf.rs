@@ -121,7 +121,7 @@ pub fn export_3mf_with_document(
         Err(e) => return Err(e),
     };
     let version = env!("CARGO_PKG_VERSION");
-    let (objects, palette) = build_3mf_objects(&solids);
+    let (objects, palette) = build_3mf_objects(&solids, doc.materials());
     let model = if objects.is_empty() {
         empty_3mf_model(version)
     } else {

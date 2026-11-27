@@ -20,7 +20,7 @@ bring outside geometry in, or send Hew models out to other tools. SketchUp
 | STL | Import | Supported | Binary and ASCII, auto-detected (`stl-import`). STL carries no units, so the app asks for the source unit on import. |
 | PNG / JPEG picture | Import (place) | Supported | File ▸ Import Image…, a dropped picture, or `hew.doc.import` of a `.png`/`.jpg` (`image-import`): placed as a component holding one face painted with the picture, the shape a `.skp` image arrives in. The bytes are kept verbatim; over 64 megapixels is refused. |
 | OBJ | Import / Export | Not implemented | No OBJ path exists in either direction. |
-| 3MF | Export | Supported | OPC container with explicit millimeter units, Z-up; one `<object>` per world object / instance member carrying its display name and per-face colors (core-spec `basematerials`). Solid-gated like STL. |
+| 3MF | Export | Supported | OPC container with explicit millimeter units, Z-up; one `<object>` per world object / instance member carrying its display name and per-face colors (core-spec `basematerials`, each `<base>` named after its material, or after its color when the face has none). Solid-gated like STL. |
 | 3MF | Import | Not implemented | No `.3mf` reader exists yet. |
 | USDZ | Export | Supported | Uncompressed USD zip (`model.usda`), Y-up, meters; one `Mesh` per part with `UsdPreviewSurface` materials. Validates under the ARKit profile, so it opens directly in AR Quick Look. |
 | SVG line drawing | Export | Supported | True-size hidden-line drawing of a view at a chosen scale, millimeter `viewBox`, hidden lines removed or dashed; the same engine (`hlr`) that draws vector Line art on a printed page. Also headless as `hew.view.line_drawing`. |
